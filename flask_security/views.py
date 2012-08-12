@@ -109,6 +109,14 @@ def register_user():
     form = RegisterForm(csrf_enabled=not app.testing)
 
     if form.validate_on_submit():
+
+        user_exists = _datastore.find_user(email=form.data.get('email'))
+        if user_exists is not None:
+            _logger.debug('User %s exists' % user_exists)
+            form.email.errors.append('A user with that email already exists')
+            return render_template('security/registrations/new.html',
+                           register_user_form=form)
+
         # Create user
         u = _datastore.create_user(**form.to_dict())
 
