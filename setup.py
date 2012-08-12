@@ -20,7 +20,11 @@ from setuptools import setup
 
 setup(
     name='Flask-Security',
+<<<<<<< HEAD
     version='1.3.0-dev',
+=======
+    version='1.2.3',
+>>>>>>> 0ddbcdca06435d83188c5f8ba16c0c6f72940671
     url='https://github.com/mattupstate/flask-security',
     license='MIT',
     author='Matthew Wright',

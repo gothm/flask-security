@@ -8,6 +8,7 @@ import inspect
 import os
 import re
 
+<<<<<<< HEAD
 from flask import current_app
 from flask.ext.script import Command, Option, prompt_bool
 from werkzeug.local import LocalProxy
@@ -16,6 +17,11 @@ from flask_security import views
 
 
 _datastore = LocalProxy(lambda: current_app.extensions['security'].datastore)
+=======
+from flask.ext.script import Command, Option
+
+from flask.ext.security import user_datastore
+>>>>>>> 0ddbcdca06435d83188c5f8ba16c0c6f72940671
 
 
 def pprint(obj):
@@ -41,7 +47,11 @@ class CreateUserCommand(Command):
         ri = re.sub(r'\s', '', kwargs['roles'])
         kwargs['roles'] = [] if ri == '' else ri.split(',')
 
+<<<<<<< HEAD
         _datastore.create_user(**kwargs)
+=======
+        user_datastore.create_user(**kwargs)
+>>>>>>> 0ddbcdca06435d83188c5f8ba16c0c6f72940671
 
         print 'User created successfully.'
         kwargs['password'] = '****'
@@ -57,7 +67,11 @@ class CreateRoleCommand(Command):
     )
 
     def run(self, **kwargs):
+<<<<<<< HEAD
         _datastore.create_role(**kwargs)
+=======
+        user_datastore.create_role(**kwargs)
+>>>>>>> 0ddbcdca06435d83188c5f8ba16c0c6f72940671
         print 'Role "%(name)s" created successfully.' % kwargs
 
 
@@ -102,6 +116,7 @@ class ActivateUserCommand(_ToggleActiveCommand):
     """Deactive a user"""
 
     def run(self, user_identifier):
+<<<<<<< HEAD
         _datastore.activate_user(user_identifier)
         print "User '%s' has been activated" % user_identifier
 
@@ -143,3 +158,7 @@ class GenerateBlueprintCommand(Command):
 
         print 'File generated successfully.'
         print output
+=======
+        user_datastore.activate_user(user_identifier)
+        print "User '%s' has been activated" % user_identifier
+>>>>>>> 0ddbcdca06435d83188c5f8ba16c0c6f72940671
