@@ -6,9 +6,9 @@
 <h1>Register</h1>
 <form action="{{ url_for('flask_security.register') }}" method="POST" name="register_user_form">
   {{ register_user_form.hidden_tag() }}
-  {{ register_user_form.email.label }} {{ register_user_form.email }}<br/>
-  {{ register_user_form.password.label }} {{ register_user_form.password }}<br/>
-  {{ register_user_form.password_confirm.label }} {{ register_user_form.password_confirm }}<br/>
-  {{ register_user_form.submit }}
+  {{ register_user_form.email.label }} {{ register_user_form.email(class='span5') }}<br/>
+  {{ register_user_form.password.label }} {{ register_user_form.password(class='span5') }}<br/>
+  {{ register_user_form.password_confirm.label }} {{ register_user_form.password_confirm(class='span5') }}<br/>
+  {{ register_user_form.submit(class='btn btn-inverse btn-large') }}
 </form>
 {% endblock %}
