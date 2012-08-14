@@ -135,6 +135,8 @@ def register_user():
 
         return redirect(_security.post_register_view or
                         _security.post_login_view)
+        
+        do_flash(form.errors, 'error')
 
     return render_template('security/registrations/new.html',
                            register_user_form=form)
