@@ -1,3 +1,6 @@
+{% extends 'base.html' %}
+
+{% block body %}
 {% include "_messages.html" %}
 {% include "_nav.html" %}
 <form action="{{ url_for('flask_security.authenticate') }}" method="POST" name="login_form">
@@ -9,3 +12,6 @@
   {{ form.submit }}
 </form>
 <p>{{ content }}</p>
+
+{% endblock %}
+
