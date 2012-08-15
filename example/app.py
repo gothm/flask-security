@@ -43,7 +43,8 @@ def populate_data():
 def create_app(auth_config):
     app = Flask(__name__)
     app.debug = True
-    app.config['SECRET_KEY'] = 'secret'
+    app.config['SECRET_KEY'] = 'f\x91yx_\xb0\x8d\x9b!`+h\xf5\xb1x:\xf2\x033\xfd\xb3\x948\x97' 
+    app.config['SECURITY_REGISTERABLE'] = True
 
     if auth_config:
         for key, value in auth_config.items():
@@ -202,7 +203,8 @@ def create_mongoengine_app(auth_config=None):
 
     return app
 
+app = create_sqlalchemy_app()
+
 if __name__ == '__main__':
-    app = create_sqlalchemy_app()
     #app = create_mongoengine_app()
-    app.run()
+    app.run(host='0.0.0.0',debug=True)
