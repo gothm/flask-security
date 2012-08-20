@@ -23,8 +23,13 @@ setup(
     version='1.3.0-dev',
     url='https://github.com/gothm/flask-security',
     license='MIT',
+<<<<<<< HEAD
     author=('Matthew Wright','Gotham Workspace'),
     author_email=('matt@nobien.net','hello@gotham.ws'),
+=======
+    author='Matt Wright',
+    author_email='matt@nobien.net',
+>>>>>>> 8919129c95bb1e27e30a925240811cf63e13ece9
     description='Simple security for Flask apps',
     long_description=__doc__,
     packages=[
@@ -34,7 +39,7 @@ setup(
     include_package_data=True,
     platforms='any',
     install_requires=[
-        'Flask>=0.8',
+        'Flask>=0.9',
         'Flask-Login>=0.1.3',
         'Flask-Principal>=0.3',
         'Flask-WTF>=0.5.4',

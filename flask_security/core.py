@@ -21,7 +21,8 @@ from werkzeug.local import LocalProxy
 
 from . import views, exceptions
 from .confirmable import requires_confirmation
-from .utils import config_value as cv, get_config, verify_password
+from .utils import config_value as cv, get_config, verify_password, md5, \
+     url_for_security
 
 # Convenient references
 _security = LocalProxy(lambda: current_app.extensions['security'])
@@ -29,30 +30,33 @@ _security = LocalProxy(lambda: current_app.extensions['security'])
 
 #: Default Flask-Security configuration
 _default_config = {
+    'BLUEPRINT_NAME': 'security',
     'URL_PREFIX': None,
     'FLASH_MESSAGES': True,
     'PASSWORD_HASH': 'plaintext',
     'PASSWORD_SALT': None,
     'PASSWORD_HMAC': False,
     'AUTH_URL': '/auth',
+    'LOGIN_URL': '/login',
     'LOGOUT_URL': '/logout',
     'REGISTER_URL': '/register',
     'RESET_URL': '/reset',
     'CONFIRM_URL': '/confirm',
-    'LOGIN_VIEW': '/login',
-    'CONFIRM_ERROR_VIEW': '/confirm',
     'POST_LOGIN_VIEW': '/',
     'POST_LOGOUT_VIEW': '/',
-    'POST_FORGOT_VIEW': '/',
-    'RESET_PASSWORD_ERROR_VIEW': '/',
+    'POST_FORGOT_VIEW': None,
+    'CONFIRM_ERROR_VIEW': None,
     'POST_REGISTER_VIEW': None,
     'POST_CONFIRM_VIEW': None,
+    'POST_RESET_VIEW': None,
     'UNAUTHORIZED_VIEW': None,
     'DEFAULT_ROLES': [],
     'CONFIRMABLE': False,
     'REGISTERABLE': False,
     'RECOVERABLE': False,
     'TRACKABLE': False,
+    'PASSWORDLESS': False,
+    'LOGIN_WITHIN': '1 days',
     'CONFIRM_EMAIL_WITHIN': '5 days',
     'RESET_PASSWORD_WITHIN': '5 days',
     'LOGIN_WITHOUT_CONFIRMATION': False,
@@ -62,36 +66,46 @@ _default_config = {
     'CONFIRM_SALT': 'confirm-salt',
     'RESET_SALT': 'reset-salt',
     'AUTH_SALT': 'auth-salt',
+    'LOGIN_SALT': 'login-salt',
+    'REMEMBER_SALT': 'remember-salt',
     'DEFAULT_HTTP_AUTH_REALM': 'Login Required'
 }
 
-#: Default Flask-Security flash messages
-_default_flash_messages = {
+#: Default Flask-Security messages
+_default_messages = {
     'UNAUTHORIZED': ('You do not have permission to view this resource.', 'error'),
-    'ACCOUNT_CONFIRMED': ('Your account has been confirmed. You may now log in.', 'success'),
-    'ALREADY_CONFIRMED': ('Your account has already been confirmed', 'info'),
-    'INVALID_CONFIRMATION_TOKEN': ('Invalid confirmation token', 'error'),
+    'CONFIRM_REGISTRATION': ('Thank you. Confirmation instructions have been sent to %(email)s.', 'success'),
+    'EMAIL_CONFIRMED': ('Thank you. Your email has been confirmed.', 'success'),
+    'ALREADY_CONFIRMED': ('Your email has already been confirmed.', 'info'),
+    'INVALID_CONFIRMATION_TOKEN': ('Invalid confirmation token.', 'error'),
     'PASSWORD_RESET_REQUEST': ('Instructions to reset your password have been sent to %(email)s.', 'info'),
     'PASSWORD_RESET_EXPIRED': ('You did not reset your password within %(within)s. New instructions have been sent to %(email)s.', 'error'),
-    'INVALID_RESET_PASSWORD_TOKEN': ('Invalid reset password token', 'error'),
-    'CONFIRMATION_REQUEST': ('A new confirmation code has been sent to %(email)s.', 'info'),
-    'CONFIRMATION_EXPIRED': ('You did not confirm your account within %(within)s. New instructions to confirm your account have been sent to %(email)s.', 'error')
+    'INVALID_RESET_PASSWORD_TOKEN': ('Invalid reset password token.', 'error'),
+    'CONFIRMATION_REQUIRED': ('Email requires confirmation.', 'error'),
+    'CONFIRMATION_REQUEST': ('Confirmation instructions have been sent to %(email)s.', 'info'),
+    'CONFIRMATION_EXPIRED': ('You did not confirm your email within %(within)s. New instructions to confirm your email have been sent to %(email)s.', 'error'),
+    'LOGIN_EXPIRED': ('You did not login within %(within)s. New instructions to login have been sent to %(email)s.', 'error'),
+    'LOGIN_EMAIL_SENT': ('Instructions to login have been sent to %(email)s.', 'success'),
+    'INVALID_LOGIN_TOKEN': ('Invalid login token.', 'error'),
+    'DISABLED_ACCOUNT': ('Account is disabled.', 'error'),
+    'PASSWORDLESS_LOGIN_SUCCESSFUL': ('You have successfuly logged in.', 'success'),
+    'PASSWORD_RESET': ('You successfully reset your password and you have been logged in automatically.', 'success')
 }
 
 
 def _user_loader(user_id):
     try:
-        return _security.datastore.with_id(user_id)
-    except Exception, e:
-        current_app.logger.error('Error getting user: %s' % e)
+        return _security.datastore.find_user(id=user_id)
+    except:
         return None
 
 
 def _token_loader(token):
     try:
-        return _security.datastore.find_user(remember_token=token)
-    except Exception, e:
-        current_app.logger.error('Error getting user: %s' % e)
+        data = _security.remember_token_serializer.loads(token)
+        user = _security.datastore.find_user(id=data[0])
+        return user if md5(user.password) == data[1] else None
+    except:
         return None
 
 
@@ -114,7 +128,7 @@ def _on_identity_loaded(sender, identity):
 def _get_login_manager(app):
     lm = LoginManager()
     lm.anonymous_user = AnonymousUser
-    lm.login_view = cv('LOGIN_VIEW', app=app)
+    lm.login_view = '%s.login' % cv('BLUEPRINT_NAME', app=app)
     lm.user_loader(_user_loader)
     lm.token_loader(_token_loader)
     lm.init_app(app)
@@ -137,6 +151,10 @@ def _get_serializer(app, salt):
     return URLSafeTimedSerializer(secret_key=secret_key, salt=salt)
 
 
+def _get_remember_token_serializer(app):
+    return _get_serializer(app, app.config['SECURITY_REMEMBER_SALT'])
+
+
 def _get_reset_serializer(app):
     return _get_serializer(app, app.config['SECURITY_RESET_SALT'])
 
@@ -149,6 +167,10 @@ def _get_token_auth_serializer(app):
     return _get_serializer(app, app.config['SECURITY_AUTH_SALT'])
 
 
+def _get_login_serializer(app):
+    return _get_serializer(app, app.config['SECURITY_LOGIN_SALT'])
+
+
 class RoleMixin(object):
     """Mixin for `Role` model definitions"""
     def __eq__(self, other):
@@ -156,9 +178,6 @@ class RoleMixin(object):
 
     def __ne__(self, other):
         return self.name != other and self.name != getattr(other, 'name', None)
-
-    def __str__(self):
-        return '<Role name=%s>' % self.name
 
 
 class UserMixin(BaseUserMixin):
@@ -170,17 +189,14 @@ class UserMixin(BaseUserMixin):
 
     def get_auth_token(self):
         """Returns the user's authentication token."""
-        self.remember_token
+        data = [str(self.id), md5(self.password)]
+        return _security.remember_token_serializer.dumps(data)
 
     def has_role(self, role):
         """Returns `True` if the user identifies with the specified role.
 
         :param role: A role name or `Role` instance"""
         return role in self.roles
-
-    def __str__(self):
-        ctx = (str(self.id), self.email)
-        return '<User id=%s, email=%s>' % ctx
 
 
 class AnonymousUser(AnonymousUserBase):
@@ -200,6 +216,48 @@ class _SecurityState(object):
     def __init__(self, **kwargs):
         for key, value in kwargs.items():
             setattr(self, key.lower(), value)
+
+    def _add_ctx_processor(self, endpoint, fn):
+        c = self.context_processors
+
+        if endpoint not in c:
+            c[endpoint] = []
+
+        if fn not in c[endpoint]:
+            c[endpoint].append(fn)
+
+    def _run_ctx_processor(self, endpoint):
+        rv, fns = {}, []
+
+        for g in ['all', endpoint]:
+            if g in self.context_processors:
+                fns += self.context_processors[g]
+
+        for fn in fns:
+            rv.update(fn())
+
+        return rv
+
+    def context_processor(self, fn):
+        self._add_ctx_processor('all', fn)
+
+    def forgot_password_context_processor(self, fn):
+        self._add_ctx_processor('forgot_password', fn)
+
+    def login_context_processor(self, fn):
+        self._add_ctx_processor('login', fn)
+
+    def register_context_processor(self, fn):
+        self._add_ctx_processor('register', fn)
+
+    def reset_password_context_processor(self, fn):
+        self._add_ctx_processor('reset_password', fn)
+
+    def send_confirmation_context_processor(self, fn):
+        self._add_ctx_processor('send_confirmation', fn)
+
+    def send_login_context_processor(self, fn):
+        self._add_ctx_processor('send_login', fn)
 
 
 class Security(object):
@@ -226,23 +284,25 @@ class Security(object):
         for key, value in _default_config.items():
             app.config.setdefault('SECURITY_' + key, value)
 
-        for key, value in _default_flash_messages.items():
+        for key, value in _default_messages.items():
             app.config.setdefault('SECURITY_MSG_' + key, value)
 
         identity_loaded.connect_via(app)(_on_identity_loaded)
 
         if register_blueprint:
-            bp = views.create_blueprint(app, 'flask_security', __name__,
-                                        template_folder='templates',
-                                        url_prefix=cv('URL_PREFIX', app=app))
+            name = cv('BLUEPRINT_NAME', app=app)
+            url_prefix = cv('URL_PREFIX', app=app)
+            bp = views.create_blueprint(app, name, __name__,
+                                        url_prefix=url_prefix,
+                                        template_folder='templates')
             app.register_blueprint(bp)
 
         state = self._get_state(app, datastore or self.datastore)
 
-        if not hasattr(app, 'extensions'):
-            app.extensions = {}
-
         app.extensions['security'] = state
+
+        app.context_processor(lambda: dict(url_for_security=url_for_security,
+                                           security=state))
 
         return state
 
@@ -262,15 +322,17 @@ class Security(object):
                 ('login_manager', _get_login_manager(app)),
                 ('principal', _get_principal(app)),
                 ('pwd_context', _get_pwd_context(app)),
-                ('token_auth_serializer', _get_token_auth_serializer(app))]:
+                ('remember_token_serializer', _get_remember_token_serializer(app)),
+                ('token_auth_serializer', _get_token_auth_serializer(app)),
+                ('context_processors', {})]:
             kwargs[key] = value
 
+        kwargs['login_serializer'] = (
+            _get_login_serializer(app) if kwargs['passwordless'] else None)
         kwargs['reset_serializer'] = (
             _get_reset_serializer(app) if kwargs['recoverable'] else None)
-
         kwargs['confirm_serializer'] = (
             _get_confirm_serializer(app) if kwargs['confirmable'] else None)
-
         return _SecurityState(**kwargs)
 
     def __getattr__(self, name):
@@ -315,15 +377,11 @@ class AuthenticationProvider(object):
 
         try:
             user = self._get_user(username_or_email)
-        except AttributeError, e:
-            self.auth_error("Could not find user datastore: %s" % e)
-        except exceptions.UserNotFoundError, e:
-            raise exceptions.BadCredentialsError("Specified user does not exist")
-        except Exception, e:
-            self.auth_error('Unexpected authentication error: %s' % e)
+        except exceptions.UserNotFoundError:
+            raise exceptions.BadCredentialsError('Specified user does not exist.')
 
         if requires_confirmation(user):
-            raise exceptions.BadCredentialsError('Account requires confirmation')
+            raise exceptions.ConfirmationError('Email requires confirmation.', user)
 
         # compare passwords
         if verify_password(password, user.password,
@@ -333,10 +391,3 @@ class AuthenticationProvider(object):
 
         # bad match
         raise exceptions.BadCredentialsError("Password does not match")
-
-    def auth_error(self, msg):
-        """Sends an error log message and raises an authentication error.
-
-        :param msg: An authentication error message"""
-        current_app.logger.error(msg)
-        raise exceptions.AuthenticationError(msg)

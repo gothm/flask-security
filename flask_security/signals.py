@@ -20,8 +20,8 @@ user_confirmed = signals.signal("user-confirmed")
 
 confirm_instructions_sent = signals.signal("confirm-instructions-sent")
 
+login_instructions_sent = signals.signal("login-instructions-sent")
+
 password_reset = signals.signal("password-reset")
 
-password_reset_requested = signals.signal("password-reset-requested")
-
-reset_instructions_sent = signals.signal("reset-instructions-sent")
+reset_password_instructions_sent = signals.signal("password-reset-instructions-sent")

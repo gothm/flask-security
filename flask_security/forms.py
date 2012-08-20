@@ -21,6 +21,14 @@ from .exceptions import UserNotFoundError
 _datastore = LocalProxy(lambda: app.extensions['security'].datastore)
 
 
+def unique_user_email(form, field):
+    try:
+        _datastore.find_user(email=field.data)
+        raise ValidationError('%s is already associated with an account' % field.data)
+    except UserNotFoundError:
+        pass
+
+
 def valid_user_email(form, field):
     try:
         _datastore.find_user(email=field.data)
@@ -41,6 +49,13 @@ class UserEmailFormMixin():
                     valid_user_email])
 
 
+class UniqueEmailFormMixin():
+    email = TextField("Email Address",
+        validators=[Required(message="Email not provided"),
+                    Email(message="Invalid email address"),
+                    unique_user_email])
+
+
 class PasswordFormMixin():
     password = PasswordField("Password",
         validators=[Required(message="Password not provided")])
@@ -51,10 +66,15 @@ class PasswordConfirmFormMixin():
         validators=[EqualTo('password', message="Passwords do not match")])
 
 
-class ResendConfirmationForm(Form, UserEmailFormMixin):
+class SendConfirmationForm(Form, UserEmailFormMixin):
     """The default forgot password form"""
 
     submit = SubmitField("Resend Confirmation Instructions")
+
+    def __init__(self, *args, **kwargs):
+        super(SendConfirmationForm, self).__init__(*args, **kwargs)
+        if request.method == 'GET':
+            self.email.data = request.args.get('email', None)
 
     def to_dict(self):
         return dict(email=self.email.data)
@@ -69,6 +89,21 @@ class ForgotPasswordForm(Form, UserEmailFormMixin):
         return dict(email=self.email.data)
 
 
+class PasswordlessLoginForm(Form, EmailFormMixin):
+    """The passwordless login form"""
+
+    next = HiddenField()
+    submit = SubmitField("Send Login Link")
+
+    def __init__(self, *args, **kwargs):
+        super(PasswordlessLoginForm, self).__init__(*args, **kwargs)
+        if request.method == 'GET':
+            self.next.data = request.args.get('next', None)
+
+    def to_dict(self):
+        return dict(email=self.email.data)
+
+
 class LoginForm(Form, EmailFormMixin, PasswordFormMixin):
     """The default login form"""
 
@@ -78,13 +113,11 @@ class LoginForm(Form, EmailFormMixin, PasswordFormMixin):
 
     def __init__(self, *args, **kwargs):
         super(LoginForm, self).__init__(*args, **kwargs)
-
-        if request.method == 'GET':
-            self.next.data = request.args.get('next', None)
+        self.next.data = request.args.get('next', None)
 
 
 class RegisterForm(Form,
-                   EmailFormMixin,
+                   UniqueEmailFormMixin,
                    PasswordFormMixin,
                    PasswordConfirmFormMixin):
     """The default register form"""

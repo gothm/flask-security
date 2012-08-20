@@ -11,9 +11,15 @@
   <li><a href="{{ url_for('admin_or_editor') }}">Admin or Editor</a></li>
   {% endif -%}
     {%- if current_user.is_authenticated() -%}
+<<<<<<< HEAD
       <li><a href="{{ url_for('flask_security.logout') }}">Log out</a></li>
     {%- else -%}
       <li><a href="{{ url_for('flask_security.register') }}">Register</a></li>
       <li><a href="{{ url_for('login') }}">Log in</a></li>
+=======
+      <a href="{{ url_for('security.logout') }}">Log out</a>
+    {%- else -%}
+      <a href="{{ url_for('security.login') }}">Log in</a>
+>>>>>>> 8919129c95bb1e27e30a925240811cf63e13ece9
     {%- endif -%}
 </ul>

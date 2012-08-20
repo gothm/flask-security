@@ -18,7 +18,6 @@ import sys, os
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 sys.path.insert(0, os.path.abspath('..'))
 sys.path.append(os.path.abspath('_themes'))
-#from setup import __version__
 
 # -- General configuration -----------------------------------------------------
 
@@ -50,7 +49,11 @@ copyright = u'2012, Matt Wright'
 # built documents.
 #
 # The short X.Y version.
+<<<<<<< HEAD
 version = '1.2.3'
+=======
+version = '1.3.0-dev'
+>>>>>>> 8919129c95bb1e27e30a925240811cf63e13ece9
 # The full version, including alpha/beta/rc tags.
 release = version
 
