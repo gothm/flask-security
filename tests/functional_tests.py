@@ -404,7 +404,7 @@ class RecoverableTests(SecurityTest):
         r = self.client.post('/reset',
                              data=dict(email='larry@lp.com'),
                              follow_redirects=True)
-        self.assertIn('Invalid email address', r.data)
+        self.assertIn("Specified user does not exist", r.data)
 
     def test_reset_password_with_valid_token(self):
         with capture_reset_password_requests() as requests:
@@ -428,21 +428,6 @@ class RecoverableTests(SecurityTest):
         }, follow_redirects=True)
 
         self.assertIn(self.get_message('INVALID_RESET_PASSWORD_TOKEN'), r.data)
-
-    # def test_reset_password_twice_flashes_invalid_token_msg(self):
-    #     with capture_reset_password_requests() as requests:
-    #         self.client.post('/reset', data=dict(email='joe@lp.com'))
-    #         t = requests[0]['token']
-
-    #     data = {
-    #         'password': 'newpassword',
-    #         'password_confirm': 'newpassword'
-    #     }
-
-    #     url = '/reset/' + t
-    #     r = self.client.post(url, data=data, follow_redirects=True)
-    #     r = self.client.post(url, data=data, follow_redirects=True)
-    #     self.assertIn(self.get_message('INVALID_RESET_PASSWORD_TOKEN'), r.data)
 
 
 class ExpiredResetPasswordTest(SecurityTest):
