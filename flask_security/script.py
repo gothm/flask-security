@@ -13,7 +13,7 @@ from flask import current_app
 from flask.ext.script import Command, Option, prompt_bool
 from werkzeug.local import LocalProxy
 
-from flask_security import views
+from flask_security import views, utils
 
 
 _datastore = LocalProxy(lambda: current_app.extensions['security'].datastore)
@@ -46,6 +46,7 @@ class CreateUserCommand(Command):
         # sanitize role input a bit
         ri = re.sub(r'\s', '', kwargs['roles'])
         kwargs['roles'] = [] if ri == '' else ri.split(',')
+        kwargs['password'] = utils.encrypt_password(kwargs['password'])
 
 <<<<<<< HEAD
         _datastore.create_user(**kwargs)
