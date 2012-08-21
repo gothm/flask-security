@@ -10,13 +10,13 @@
 """
 
 from itsdangerous import BadSignature, SignatureExpired
-from flask import current_app as app, request, url_for
+from flask import current_app as app, request
 from werkzeug.local import LocalProxy
 
-from .exceptions import ResetPasswordError, UserNotFoundError
-from .signals import password_reset, password_reset_requested, \
-     reset_instructions_sent
-from .utils import send_mail, get_max_age, md5, get_message, encrypt_password
+from .exceptions import ResetPasswordError
+from .signals import password_reset, reset_password_instructions_sent
+from .utils import send_mail, get_max_age, md5, get_message, encrypt_password, \
+     url_for_security
 
 
 # Convenient references
@@ -25,14 +25,13 @@ _security = LocalProxy(lambda: app.extensions['security'])
 _datastore = LocalProxy(lambda: _security.datastore)
 
 
-def send_reset_password_instructions(user, reset_token):
+def send_reset_password_instructions(user):
     """Sends the reset password instructions email for the specified user.
 
     :param user: The user to send the instructions to
     """
-    url = url_for('flask_security.reset_password',
-                  token=reset_token)
-
+    token = generate_reset_password_token(user)
+    url = url_for_security('reset_password', token=token)
     reset_link = request.url_root[:-1] + url
 
     send_mail('Password reset instructions',
@@ -40,10 +39,8 @@ def send_reset_password_instructions(user, reset_token):
               'reset_instructions',
               dict(user=user, reset_link=reset_link))
 
-    reset_instructions_sent.send(dict(user=user, token=reset_token),
-                                 app=app._get_current_object())
-
-    return True
+    reset_password_instructions_sent.send(dict(user=user, token=token),
+                                          app=app._get_current_object())
 
 
 def send_password_reset_notice(user):
@@ -82,19 +79,11 @@ def reset_by_token(token, password):
         data = serializer.loads(token, max_age=max_age)
         user = _datastore.find_user(id=data[0])
 
-        if md5(user.password) != data[1]:
-            raise UserNotFoundError()
-
-        user.password = encrypt_password(password,
-                                         salt=_security.password_salt,
-                                         use_hmac=_security.password_hmac)
+        user.password = encrypt_password(password)
 
         _datastore._save_model(user)
-
         send_password_reset_notice(user)
-
         password_reset.send(user, app=app._get_current_object())
-
         return user
 
     except SignatureExpired:
@@ -103,23 +92,4 @@ def reset_by_token(token, password):
                                  user=_datastore.find_user(id=data[0]))
 
     except BadSignature:
-        raise ResetPasswordError(get_message('INVALID_RESET_PASSWORD_TOKEN'))
-
-    except UserNotFoundError:
-        raise ResetPasswordError(get_message('INVALID_RESET_PASSWORD_TOKEN'))
-
-
-def reset_password_reset_token(user):
-    """Resets the specified user's reset password token and sends the user
-    an email with instructions explaining next steps.
-
-    :param user: The user to work with
-    """
-    token = generate_reset_password_token(user)
-
-    send_reset_password_instructions(user, token)
-
-    password_reset_requested.send(dict(user=user, token=token),
-                                  app=app._get_current_object())
-
-    return token
+        raise ResetPasswordError(get_message('INVALID_RESET_PASSWORD_TOKEN')[0])

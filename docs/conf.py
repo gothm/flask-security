@@ -18,7 +18,6 @@ import sys, os
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 sys.path.insert(0, os.path.abspath('..'))
 sys.path.append(os.path.abspath('_themes'))
-#from setup import __version__
 
 # -- General configuration -----------------------------------------------------
 
@@ -50,7 +49,7 @@ copyright = u'2012, Matt Wright'
 # built documents.
 #
 # The short X.Y version.
-version = '1.2.3'
+version = '1.3.0-dev'
 # The full version, including alpha/beta/rc tags.
 release = version
 
@@ -93,14 +92,14 @@ pygments_style = 'sphinx'
 
 # The theme to use for HTML and HTML Help pages.  Major themes that come with
 # Sphinx are currently 'default' and 'sphinxdoc'.
-html_theme = 'flask_small'
+html_theme = 'flask'
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
 # documentation.
 html_theme_options = {
-    'github_fork': 'mattupstate/flask-security',
-    'index_logo': False
+    #'github_fork': 'mattupstate/flask-security',
+    #'index_logo': False
 }
 
 # Add any paths that contain custom themes here, relative to this directory.

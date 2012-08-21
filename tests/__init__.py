@@ -23,18 +23,20 @@ class SecurityTest(TestCase):
                 content_type=content_type or 'text/html',
                 headers=headers)
 
-    def _post(self, route, data=None, content_type=None, follow_redirects=True):
+    def _post(self, route, data=None, content_type=None, follow_redirects=True, headers=None):
         return self.client.post(route, data=data,
                 follow_redirects=follow_redirects,
-                content_type=content_type or 'application/x-www-form-urlencoded')
+                content_type=content_type or 'application/x-www-form-urlencoded',
+                headers=headers)
 
     def register(self, email, password='password'):
         data = dict(email=email, password=password, password_confirm=password)
         return self.client.post('/register', data=data, follow_redirects=True)
 
-    def authenticate(self, email="matt@lp.com", password="password", endpoint=None):
-        data = dict(email=email, password=password)
-        return self._post(endpoint or '/auth', data=data)
+    def authenticate(self, email="matt@lp.com", password="password", endpoint=None, **kwargs):
+        data = dict(email=email, password=password, remember='y')
+        r = self._post(endpoint or '/login', data=data, **kwargs)
+        return r
 
     def json_authenticate(self, email="matt@lp.com", password="password", endpoint=None):
         data = """
@@ -43,7 +45,7 @@ class SecurityTest(TestCase):
     "password": "%s"
 }
 """
-        return self._post(endpoint or '/auth',
+        return self._post(endpoint or '/login',
                           content_type="application/json",
                           data=data % (email, password))
 
@@ -70,3 +72,6 @@ class SecurityTest(TestCase):
             return TestCase.assertIsNotNone(self, obj, msg)
 
         return self.assertTrue(obj is not None)
+
+    def get_message(self, key, **kwargs):
+        return self.app.config['SECURITY_MSG_' + key][0] % kwargs

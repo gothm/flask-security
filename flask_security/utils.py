@@ -12,17 +12,20 @@
 import base64
 import hashlib
 import hmac
-import os
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+from functools import wraps
 
-from flask import url_for, flash, current_app, request, session, render_template
-from flask.ext.login import make_secure_token, login_user as _login_user, \
+from flask import url_for, flash, current_app, request, session, redirect, \
+     render_template
+from flask.ext.login import login_user as _login_user, \
      logout_user as _logout_user
 from flask.ext.principal import Identity, AnonymousIdentity, identity_changed
 from werkzeug.local import LocalProxy
 
-from .signals import user_registered, password_reset_requested
+from .core import current_user
+from .signals import user_registered, reset_password_instructions_sent, \
+     login_instructions_sent
 
 
 # Convenient references
@@ -35,34 +38,36 @@ _pwd_context = LocalProxy(lambda: _security.pwd_context)
 _logger = LocalProxy(lambda: current_app.logger)
 
 
+def anonymous_user_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if current_user.is_authenticated():
+            return redirect(get_url(_security.post_login_view))
+        return f(*args, **kwargs)
+    return wrapper
+
+
 def login_user(user, remember=True):
     """Performs the login and sends the appropriate signal."""
 
     if not _login_user(user, remember):
         return False
 
-    if user.authentication_token is None:
-        user.authentication_token = generate_authentication_token(user)
-
-    if remember:
-        user.remember_token = get_remember_token(user.email, user.password)
-
     if _security.trackable:
         old_current, new_current = user.current_login_at, datetime.utcnow()
         user.last_login_at = old_current or new_current
         user.current_login_at = new_current
 
-        old_current, new_current = user.current_login_ip, request.remote_addr
+        remote_addr = request.remote_addr or 'untrackable'
+        old_current, new_current = user.current_login_ip, remote_addr
         user.last_login_ip = old_current or new_current
         user.current_login_ip = new_current
 
-        user.login_count = user.login_count + 1 if user.login_count else 0
+        user.login_count = user.login_count + 1 if user.login_count else 1
 
     _datastore._save_model(user)
-
     identity_changed.send(current_app._get_current_object(),
                           identity=Identity(user.id))
-
     _logger.debug('User %s logged in' % user)
     return True
 
@@ -70,10 +75,8 @@ def login_user(user, remember=True):
 def logout_user():
     for key in ('identity.name', 'identity.auth_type'):
         session.pop(key, None)
-
     identity_changed.send(current_app._get_current_object(),
                           identity=AnonymousIdentity())
-
     _logout_user()
 
 
@@ -82,38 +85,32 @@ def get_hmac(msg, salt=None, digestmod=None):
     return base64.b64encode(hmac.new(salt, msg, digestmod).digest())
 
 
-def verify_password(password, password_hash, salt=None, use_hmac=False):
-    hmac_value = get_hmac(password, salt) if use_hmac else password
+def verify_password(password, password_hash, use_hmac=None):
+    if use_hmac is None:
+        use_hmac = _security.password_hmac
+
+    if use_hmac:
+        hmac_value = get_hmac(password, _security.password_hmac_salt)
+    else:
+        hmac_value = password
+
     return _pwd_context.verify(hmac_value, password_hash)
 
 
-def encrypt_password(password, salt=None, use_hmac=False):
-    hmac_value = get_hmac(password, salt) if use_hmac else password
+def encrypt_password(password, salt=None, use_hmac=None):
+    if use_hmac is None:
+        use_hmac = _security.password_hmac
+
+    if use_hmac:
+        hmac_value = get_hmac(password, _security.password_hmac_salt)
+    else:
+        hmac_value = password
+
     return _pwd_context.encrypt(hmac_value)
-
-
-def generate_authentication_token(user):
-    """Generates a unique authentication token for the specified user.
-
-    :param user: The user to work with
-    """
-    data = [str(user.id), md5(user.email)]
-    return _security.token_auth_serializer.dumps(data)
 
 
 def md5(data):
     return hashlib.md5(data).hexdigest()
-
-
-def generate_token():
-    """Generate an arbitrary URL safe token."""
-    return base64.urlsafe_b64encode(os.urandom(30))
-
-
-def get_remember_token(email, password):
-    assert email is not None
-    assert password is not None
-    return make_secure_token(email, password)
 
 
 def do_flash(message, category=None):
@@ -139,6 +136,25 @@ def get_url(endpoint_or_url):
         return endpoint_or_url
 
 
+def get_security_endpoint_name(endpoint):
+    return '%s.%s' % (_security.blueprint_name, endpoint)
+
+
+def url_for_security(endpoint, **values):
+    """Return a URL for the security blueprint
+
+    :param endpoint: the endpoint of the URL (name of the function)
+    :param values: the variable arguments of the URL rule
+    :param _external: if set to `True`, an absolute URL is generated. Server
+      address can be changed via `SERVER_NAME` configuration variable which
+      defaults to `localhost`.
+    :param _anchor: if provided this is added as anchor to the URL.
+    :param _method: if provided this explicitly specifies an HTTP method.
+    """
+    endpoint = get_security_endpoint_name(endpoint)
+    return url_for(endpoint, **values)
+
+
 def get_post_login_redirect():
     """Returns the URL to redirect to after a user logs in successfully."""
     return (get_url(request.args.get('next')) or
@@ -151,12 +167,9 @@ def find_redirect(key):
 
     :param key: The session or application configuration key to search for
     """
-    result = (get_url(session.pop(key.lower(), None)) or
-              get_url(current_app.config[key.upper()] or None) or '/')
-
-    session.pop(key.lower(), None)
-
-    return result
+    rv = (get_url(session.pop(key.lower(), None)) or
+          get_url(current_app.config[key.upper()] or None) or '/')
+    return rv
 
 
 def get_config(app):
@@ -225,27 +238,34 @@ def send_mail(subject, recipient, template, context=None):
     :param template: The name of the email template
     :param context: The context to render the template with
     """
-    mail = current_app.extensions.get('mail', None)
-    current_app.logger.debug('%s' % current_app.extensions)
-
-    if mail is None:
-        raise RuntimeError('You need to install and configure the '
-                           'Flask-Mail extension in order to send '
-                           'emails with Flask-Security')
-
     from flask.ext.mail import Message
 
+    mail = current_app.extensions.get('mail')
     context = context or {}
 
     msg = Message(subject,
                   sender=_security.email_sender,
                   recipients=[recipient])
 
-    base = 'security/email'
-    msg.body = render_template('%s/%s.txt' % (base, template), **context)
-    msg.html = render_template('%s/%s.html' % (base, template), **context)
-
+    ctx = ('security/email', template)
+    msg.body = render_template('%s/%s.txt' % ctx, **context)
+    msg.html = render_template('%s/%s.html' % ctx, **context)
     mail.send(msg)
+
+
+@contextmanager
+def capture_passwordless_login_requests():
+    login_requests = []
+
+    def _on(data, app):
+        login_requests.append(data)
+
+    login_instructions_sent.connect(_on)
+
+    try:
+        yield login_requests
+    finally:
+        login_instructions_sent.disconnect(_on)
 
 
 @contextmanager
@@ -280,9 +300,9 @@ def capture_reset_password_requests(reset_password_sent_at=None):
     def _on(request, app):
         reset_requests.append(request)
 
-    password_reset_requested.connect(_on)
+    reset_password_instructions_sent.connect(_on)
 
     try:
         yield reset_requests
     finally:
-        password_reset_requested.disconnect(_on)
+        reset_password_instructions_sent.disconnect(_on)

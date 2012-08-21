@@ -12,17 +12,20 @@ from flask import Flask, render_template, current_app
 from flask.ext.mail import Mail
 from flask.ext.mongoengine import MongoEngine
 from flask.ext.sqlalchemy import SQLAlchemy
-from flask.ext.security import Security, LoginForm, login_required, \
-     roles_required, roles_accepted, UserMixin, RoleMixin
+from flask.ext.security import Security, LoginForm, PasswordlessLoginForm, \
+     login_required, roles_required, roles_accepted, UserMixin, RoleMixin
 from flask.ext.security.datastore import SQLAlchemyUserDatastore, \
      MongoEngineUserDatastore
 from flask.ext.security.decorators import http_auth_required, \
      auth_token_required
+from flask.ext.security.exceptions import RoleNotFoundError
+from flask.ext.security.utils import encrypt_password
 
 
 def create_roles():
     for role in ('admin', 'editor', 'author'):
         current_app.security.datastore.create_role(name=role)
+    current_app.security.datastore._commit()
 
 
 def create_users():
@@ -32,12 +35,45 @@ def create_users():
                ('jill@lp.com', 'password', ['author'], True),
                ('tiya@lp.com', 'password', [], False)):
         current_app.security.datastore.create_user(
-            email=u[0], password=u[1], roles=u[2], active=u[3])
+            email=u[0], password=encrypt_password(u[1]), roles=u[2], active=u[3])
+    current_app.security.datastore._commit()
 
 
 def populate_data():
     create_roles()
     create_users()
+
+
+def add_ctx_processors(app):
+    s = app.security
+
+    @s.context_processor
+    def for_all():
+        return dict()
+
+    @s.forgot_password_context_processor
+    def forgot_password():
+        return dict()
+
+    @s.login_context_processor
+    def login():
+        return dict()
+
+    @s.register_context_processor
+    def register():
+        return dict()
+
+    @s.reset_password_context_processor
+    def reset_password():
+        return dict()
+
+    @s.send_confirmation_context_processor
+    def send_confirmation():
+        return dict()
+
+    @s.send_login_context_processor
+    def send_login():
+        return dict()
 
 
 def create_app(auth_config):
@@ -46,23 +82,16 @@ def create_app(auth_config):
     app.config['SECRET_KEY'] = 'f\x91yx_\xb0\x8d\x9b!`+h\xf5\xb1x:\xf2\x033\xfd\xb3\x948\x97' 
     app.config['SECURITY_REGISTERABLE'] = True
 
+    mail = Mail(app)
+    app.extensions['mail'] = mail
+
     if auth_config:
         for key, value in auth_config.items():
             app.config[key] = value
 
-    app.mail = Mail(app)
-
     @app.route('/')
     def index():
         return render_template('index.html', content='Home Page')
-
-    @app.route('/login')
-    def login():
-        return render_template('login.html', content='Login Page', form=LoginForm())
-
-    @app.route('/custom_login')
-    def custom_login():
-        return render_template('login.html', content='Custom Login Page', form=LoginForm())
 
     @app.route('/profile')
     @login_required
@@ -116,6 +145,43 @@ def create_app(auth_config):
     def unauthorized():
         return render_template('unauthorized.html')
 
+    @app.route('/coverage/add_role_to_user')
+    def add_role_to_user():
+        ds = app.security.datastore
+        u = ds.find_user(email='joe@lp.com')
+        r = ds.find_role('admin')
+        ds.add_role_to_user(u, r)
+        return 'success'
+
+    @app.route('/coverage/remove_role_from_user')
+    def remove_role_from_user():
+        ds = app.security.datastore
+        u = ds.find_user(email='matt@lp.com')
+        ds.remove_role_from_user(u, 'admin')
+        return 'success'
+
+    @app.route('/coverage/deactivate_user')
+    def deactivate_user():
+        ds = app.security.datastore
+        u = ds.find_user(email='matt@lp.com')
+        ds.deactivate_user(u)
+        return 'success'
+
+    @app.route('/coverage/activate_user')
+    def activate_user():
+        ds = app.security.datastore
+        u = ds.find_user(email='tiya@lp.com')
+        ds.activate_user(u)
+        return 'success'
+
+    @app.route('/coverage/invalid_role')
+    def invalid_role():
+        ds = app.security.datastore
+        try:
+            ds.find_role('bogus')
+        except RoleNotFoundError:
+            return 'success'
+
     return app
 
 
@@ -124,6 +190,7 @@ def create_sqlalchemy_app(auth_config=None, register_blueprint=True):
     app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://root@localhost/flask_security_test'
 
     db = SQLAlchemy(app)
+    app.db = db
 
     roles_users = db.Table('roles_users',
         db.Column('user_id', db.Integer(), db.ForeignKey('user.id')),
@@ -138,7 +205,6 @@ def create_sqlalchemy_app(auth_config=None, register_blueprint=True):
         id = db.Column(db.Integer, primary_key=True)
         email = db.Column(db.String(255), unique=True)
         password = db.Column(db.String(255))
-        remember_token = db.Column(db.String(255))
         last_login_at = db.Column(db.DateTime())
         current_login_at = db.Column(db.DateTime())
         last_login_ip = db.Column(db.String(100))
@@ -146,7 +212,6 @@ def create_sqlalchemy_app(auth_config=None, register_blueprint=True):
         login_count = db.Column(db.Integer)
         active = db.Column(db.Boolean())
         confirmed_at = db.Column(db.DateTime())
-        authentication_token = db.Column(db.String(255))
         roles = db.relationship('Role', secondary=roles_users,
                                 backref=db.backref('users', lazy='dynamic'))
 
@@ -164,6 +229,8 @@ def create_sqlalchemy_app(auth_config=None, register_blueprint=True):
         db.create_all()
         populate_data()
 
+    add_ctx_processors(app)
+
     return app
 
 
@@ -174,6 +241,7 @@ def create_mongoengine_app(auth_config=None):
     app.config['MONGODB_PORT'] = 27017
 
     db = MongoEngine(app)
+    app.db = db
 
     class Role(db.Document, RoleMixin):
         name = db.StringField(required=True, unique=True, max_length=80)
@@ -182,7 +250,6 @@ def create_mongoengine_app(auth_config=None):
     class User(db.Document, UserMixin):
         email = db.StringField(unique=True, max_length=255)
         password = db.StringField(required=True, max_length=255)
-        remember_token = db.StringField(max_length=255)
         last_login_at = db.DateTimeField()
         current_login_at = db.DateTimeField()
         last_login_ip = db.StringField(max_length=100)
@@ -190,7 +257,6 @@ def create_mongoengine_app(auth_config=None):
         login_count = db.IntField()
         active = db.BooleanField(default=True)
         confirmed_at = db.DateTimeField()
-        authentication_token = db.StringField(max_length=255)
         roles = db.ListField(db.ReferenceField(Role), default=[])
 
     app.security = Security(app, MongoEngineUserDatastore(db, User, Role))
@@ -200,6 +266,8 @@ def create_mongoengine_app(auth_config=None):
         User.drop_collection()
         Role.drop_collection()
         populate_data()
+
+    add_ctx_processors(app)
 
     return app
 

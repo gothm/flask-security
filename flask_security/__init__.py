@@ -10,14 +10,15 @@
     :license: MIT, see LICENSE for more details.
 """
 
+__version__ = '1.3.0-dev'
+
 from .core import Security, RoleMixin, UserMixin, AnonymousUser, \
      AuthenticationProvider, current_user
 from .datastore import SQLAlchemyUserDatastore, MongoEngineUserDatastore
 from .decorators import auth_token_required, http_auth_required, \
      login_required, roles_accepted, roles_required
 from .forms import ForgotPasswordForm, LoginForm, RegisterForm, \
-     ResetPasswordForm
+     ResetPasswordForm, PasswordlessLoginForm
 from .signals import confirm_instructions_sent, password_reset, \
-     password_reset_requested, reset_instructions_sent, user_confirmed, \
-     user_registered
-from .utils import login_user, logout_user
+     reset_password_instructions_sent, user_confirmed, user_registered
+from .utils import login_user, logout_user, url_for_security

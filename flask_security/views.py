@@ -9,23 +9,25 @@
     :license: MIT, see LICENSE for more details.
 """
 
-from flask import current_app as app, redirect, request, session, \
-     render_template, jsonify, Blueprint
-from flask.ext.principal import AnonymousIdentity, identity_changed
+from flask import current_app as app, redirect, request, \
+     render_template, jsonify, after_this_request, Blueprint
 from werkzeug.datastructures import MultiDict
 from werkzeug.local import LocalProxy
 
-from flask_security.confirmable import confirm_by_token, reset_confirmation_token
+from flask_security.confirmable import confirm_by_token, \
+     send_confirmation_instructions
 from flask_security.decorators import login_required
 from flask_security.exceptions import ConfirmationError, BadCredentialsError, \
-     ResetPasswordError
+     ResetPasswordError, PasswordlessLoginError
 from flask_security.forms import LoginForm, RegisterForm, ForgotPasswordForm, \
-     ResetPasswordForm, ResendConfirmationForm
+     ResetPasswordForm, SendConfirmationForm, PasswordlessLoginForm
+from flask_security.passwordless import send_login_instructions, login_by_token
 from flask_security.recoverable import reset_by_token, \
-     reset_password_reset_token
+     send_reset_password_instructions
 from flask_security.signals import user_registered
 from flask_security.utils import get_url, get_post_login_redirect, do_flash, \
-     get_message, config_value, login_user, logout_user
+     get_message, config_value, login_user, logout_user, \
+     anonymous_user_required, url_for_security as url_for
 
 
 # Convenient references
@@ -44,7 +46,7 @@ def _json_auth_ok(user):
         "response": {
             "user": {
                 "id": str(user.id),
-                "authentication_token": user.authentication_token
+                "authentication_token": user.get_auth_token()
             }
         }
     })
@@ -63,134 +65,187 @@ def _json_auth_error(msg):
     return resp
 
 
-def authenticate():
-    """View function which handles an authentication request."""
+def _commit(response=None):
+    _datastore._commit()
+    return response
 
-    form = LoginForm(MultiDict(request.json) if request.json else request.form)
 
-    try:
-        user = _security.auth_provider.authenticate(form)
+def _ctx(endpoint):
+    return _security._run_ctx_processor(endpoint)
 
-        if login_user(user, remember=form.remember.data):
-            if request.json:
-                return _json_auth_ok(user)
 
-            return redirect(get_post_login_redirect())
-
-        raise BadCredentialsError('Account is disabled')
-
-    except BadCredentialsError, e:
-        msg = str(e)
-
-    _logger.debug('Unsuccessful authentication attempt: %s' % msg)
+@anonymous_user_required
+def login():
+    """View function for login view"""
+    form = LoginForm(request.form, csrf_enabled=not app.testing)
+    user, msg, confirm_url = None, None, None
 
     if request.json:
-        return _json_auth_error(msg)
+        form = LoginForm(MultiDict(request.json), csrf_enabled=not app.testing)
 
-    do_flash(msg, 'error')
+    if form.validate_on_submit():
+        try:
+            user = _security.auth_provider.authenticate(form)
+        except ConfirmationError, e:
+            msg = str(e)
+            confirm_url = url_for('send_confirmation', email=e.user.email)
+        except BadCredentialsError, e:
+            msg = str(e)
+            form.password.errors.append(msg)
 
-    return redirect(request.referrer or _security.login_manager.login_view)
+        if user:
+            if login_user(user, remember=form.remember.data):
+                after_this_request(_commit)
+                if request.json:
+                    return _json_auth_ok(user)
+                return redirect(get_post_login_redirect())
+            form.email.errors.append(get_message('DISABLED_ACCOUNT')[0])
+
+        _logger.debug('Unsuccessful authentication attempt: %s' % msg)
+
+        if request.json:
+            return _json_auth_error(msg)
+
+        if confirm_url:
+            do_flash(msg, 'error')
+            return redirect(confirm_url)
+
+    return render_template('security/login.html',
+                           login_form=form,
+                           **_ctx('login'))
 
 
+@login_required
 def logout():
     """View function which handles a logout request."""
 
     logout_user()
-
     _logger.debug('User logged out')
+    next_url = request.args.get('next', None)
+    post_logout_url = get_url(_security.post_logout_view)
+    return redirect(next_url or post_logout_url)
 
-    return redirect(request.args.get('next', None) or
-                    _security.post_logout_view)
 
-
-def register_user():
+@anonymous_user_required
+def register():
     """View function which handles a registration request."""
 
     form = RegisterForm(csrf_enabled=not app.testing)
 
-    if form.validate_on_submit():
-        u = None
-        try:
-            u  = _datastore.find_user(email=form.data.get('email'))
-            if u is not None:
-                _logger.debug('User %s exists' % u)
-                form.email.errors.append('A user with that email already exists')
-                return render_template('security/registrations/new.html',
-                           register_user_form=form)
-        except:
-            # Create user
-            u = _datastore.create_user(**form.to_dict())
+    if not form.validate_on_submit():
+        return render_template('security/register.html',
+                               register_user_form=form,
+                               **_ctx('register'))
+    token = None
+    user = _datastore.create_user(**form.to_dict())
+    _commit()
 
-        # Send confirmation instructions if necessary
-        t = reset_confirmation_token(u) if _security.confirmable else None
+    if _security.confirmable:
+        token = send_confirmation_instructions(user)
+        do_flash(*get_message('CONFIRM_REGISTRATION', email=user.email))
 
-        data = dict(user=u, confirm_token=t)
-        user_registered.send(data, app=app._get_current_object())
+    user_registered.send(dict(user=user, confirm_token=token),
+                         app=app._get_current_object())
 
-        _logger.debug('User %s registered' % u)
+    _logger.debug('User %s registered' % user)
 
-        # Login the user if allowed
-        if not _security.confirmable or _security.login_without_confirmation:
-            login_user(u)
-
+<<<<<<< HEAD
         return redirect(_security.post_register_view or
                         _security.post_login_view)
         
         do_flash(form.errors, 'error')
+=======
+    if not _security.confirmable or _security.login_without_confirmation:
+        after_this_request(_commit)
+        login_user(user)
+>>>>>>> 25e9d02a8ad30307cc00ac469c671592b18ac45e
 
-    return render_template('security/registrations/new.html',
-                           register_user_form=form)
+    post_register_url = get_url(_security.post_register_view)
+    post_login_url = get_url(_security.post_login_view)
+
+    return redirect(post_register_url or post_login_url)
 
 
-def send_confirmation():
-    form = ResendConfirmationForm()
+@anonymous_user_required
+def send_login():
+    """View function that sends login instructions for passwordless login"""
+
+    form = PasswordlessLoginForm(csrf_enabled=not app.testing)
 
     if form.validate_on_submit():
-        user = _datastore.find_user(email=form.email.data)
+        user = _datastore.find_user(**form.to_dict())
 
-        reset_confirmation_token(user)
+        if user.is_active():
+            send_login_instructions(user, form.next.data)
+            do_flash(*get_message('LOGIN_EMAIL_SENT', email=user.email))
+        else:
+            form.email.errors.append(get_message('DISABLED_ACCOUNT')[0])
 
-        _logger.debug('%s request confirmation instructions' % user)
-
-        msg, cat = get_message('CONFIRMATION_REQUEST', email=user.email)
-
-        do_flash(msg, cat)
-
-    else:
-        for key, value in form.errors.items():
-            do_flash(value[0], 'error')
-
-    return render_template('security/confirmations/new.html',
-                           reset_confirmation_form=form)
+    return render_template('security/send_login.html',
+                           login_form=form,
+                           **_ctx('send_login'))
 
 
-def confirm_account(token):
-    """View function which handles a account confirmation request."""
+@anonymous_user_required
+def token_login(token):
+    """View function that handles passwordless login via a token"""
+
+    try:
+        user, next = login_by_token(token)
+    except PasswordlessLoginError, e:
+        if e.user:
+            send_login_instructions(e.user, e.next)
+        do_flash(str(e), 'error')
+        return redirect(request.referrer or url_for('login'))
+
+    do_flash(*get_message('PASSWORDLESS_LOGIN_SUCCESSFUL'))
+    return redirect(next)
+
+
+@anonymous_user_required
+def send_confirmation():
+    """View function which sends confirmation instructions."""
+
+    form = SendConfirmationForm(csrf_enabled=not app.testing)
+
+    if form.validate_on_submit():
+        user = _datastore.find_user(**form.to_dict())
+        if user.confirmed_at is None:
+            send_confirmation_instructions(user)
+            msg = get_message('CONFIRMATION_REQUEST', email=user.email)
+            _logger.debug('%s request confirmation instructions' % user)
+        else:
+            msg = get_message('ALREADY_CONFIRMED')
+        do_flash(*msg)
+
+    return render_template('security/send_confirmation.html',
+                           reset_confirmation_form=form,
+                           **_ctx('send_confirmation'))
+
+
+def confirm_email(token):
+    """View function which handles a email confirmation request."""
+    after_this_request(_commit)
+
     try:
         user = confirm_by_token(token)
-        _logger.debug('%s confirmed their account' % user)
-
     except ConfirmationError, e:
-        msg, cat = str(e), 'error'
-
-        _logger.debug('Confirmation error: ' + msg)
-
+        _logger.debug('Confirmation error: %s' % e)
         if e.user:
-            reset_confirmation_token(e.user)
+            send_confirmation_instructions(e.user)
+        do_flash(str(e), 'error')
+        confirm_error_url = get_url(_security.confirm_error_view)
+        return redirect(confirm_error_url or url_for('send_confirmation'))
 
-            msg, cat = get_message('CONFIRMATION_EXPIRED',
-                                   within=_security.confirm_email_within,
-                                   email=e.user.email)
-
-        do_flash(msg, cat)
-
-        return redirect(get_url(_security.confirm_error_view))
-
-    do_flash(get_message('ACCOUNT_CONFIRMED'))
-
-    return redirect(_security.post_confirm_view or _security.post_login_view)
+    _logger.debug('%s confirmed their email' % user)
+    do_flash(*get_message('EMAIL_CONFIRMED'))
+    login_user(user, True)
+    post_confirm_url = get_url(_security.post_confirm_view)
+    post_login_url = get_url(_security.post_login_view)
+    return redirect(post_confirm_url or post_login_url)
 
 
+@anonymous_user_required
 def forgot_password():
     """View function that handles a forgotten password request."""
 
@@ -198,71 +253,75 @@ def forgot_password():
 
     if form.validate_on_submit():
         user = _datastore.find_user(**form.to_dict())
-
-        reset_password_reset_token(user)
-
+        send_reset_password_instructions(user)
         _logger.debug('%s requested to reset their password' % user)
+        do_flash(*get_message('PASSWORD_RESET_REQUEST', email=user.email))
 
-        msg, cat = get_message('PASSWORD_RESET_REQUEST', email=user.email)
-
-        do_flash(msg, cat)
-
-        return redirect(_security.post_forgot_view)
-
-    else:
-        _logger.debug('A reset password request was made for %s but '
-                      'that email does not exist.' % form.email.data)
-
-        for key, value in form.errors.items():
-            do_flash(value[0], 'error')
-
-    return render_template('security/passwords/new.html',
-                           forgot_password_form=form)
+    return render_template('security/forgot_password.html',
+                           forgot_password_form=form,
+                           **_ctx('forgot_password'))
 
 
+@anonymous_user_required
 def reset_password(token):
     """View function that handles a reset password request."""
 
+    next = None
     form = ResetPasswordForm(csrf_enabled=not app.testing)
 
     if form.validate_on_submit():
         try:
             user = reset_by_token(token=token, **form.to_dict())
-            _logger.debug('%s reset their password' % user)
-
+            msg = get_message('PASSWORD_RESET')
+            next = (get_url(_security.post_reset_view) or
+                    get_url(_security.post_login_view))
         except ResetPasswordError, e:
-            msg, cat = str(e), 'error'
-
-            _logger.debug('Password reset error: ' + msg)
-
+            msg = (str(e), 'error')
             if e.user:
-                reset_password_reset_token(e.user)
+                send_reset_password_instructions(e.user)
+                msg = get_message('PASSWORD_RESET_EXPIRED',
+                                  within=_security.reset_password_within,
+                                  email=e.user.email)
+            _logger.debug('Password reset error: ' + msg[0])
 
-                msg, cat = get_message('PASSWORD_RESET_EXPIRED',
-                                       within=_security.reset_password_within,
-                                       email=e.user.email)
+        do_flash(*msg)
 
-            do_flash(msg, cat)
+    if next:
+        login_user(user)
+        _logger.debug('%s reset their password' % user)
+        return redirect(next)
 
-    return render_template('security/passwords/edit.html',
+    return render_template('security/reset_password.html',
                            reset_password_form=form,
-                           password_reset_token=token)
+                           reset_password_token=token,
+                           **_ctx('reset_password'))
 
 
 def create_blueprint(app, name, import_name, **kwargs):
+    """Creates the security extension blueprint"""
+
     bp = Blueprint(name, import_name, **kwargs)
 
-    bp.route(config_value('AUTH_URL', app=app),
-             methods=['POST'],
-             endpoint='authenticate')(authenticate)
+    if config_value('PASSWORDLESS', app=app):
+        bp.route(config_value('LOGIN_URL', app=app),
+                 methods=['GET', 'POST'],
+                 endpoint='login')(send_login)
+
+        bp.route(config_value('LOGIN_URL', app=app) + '/<token>',
+                 methods=['GET'],
+                 endpoint='token_login')(token_login)
+    else:
+        bp.route(config_value('LOGIN_URL', app=app),
+                 methods=['GET', 'POST'],
+                 endpoint='login')(login)
 
     bp.route(config_value('LOGOUT_URL', app=app),
-             endpoint='logout')(login_required(logout))
+             endpoint='logout')(logout)
 
     if config_value('REGISTERABLE', app=app):
         bp.route(config_value('REGISTER_URL', app=app),
                  methods=['GET', 'POST'],
-                 endpoint='register')(register_user)
+                 endpoint='register')(register)
 
     if config_value('RECOVERABLE', app=app):
         bp.route(config_value('RESET_URL', app=app),
@@ -278,6 +337,6 @@ def create_blueprint(app, name, import_name, **kwargs):
                  endpoint='send_confirmation')(send_confirmation)
         bp.route(config_value('CONFIRM_URL', app=app) + '/<token>',
                  methods=['GET', 'POST'],
-                 endpoint='confirm_account')(confirm_account)
+                 endpoint='confirm_email')(confirm_email)
 
     return bp
