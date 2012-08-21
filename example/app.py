@@ -75,7 +75,11 @@ def create_app(auth_config):
     app = Flask(__name__)
     app.debug = True
     app.config['SECRET_KEY'] = 'f\x91yx_\xb0\x8d\x9b!`+h\xf5\xb1x:\xf2\x033\xfd\xb3\x948\x97' 
+
     app.config['SECURITY_REGISTERABLE'] = True
+    app.config['SECURITY_RECOVERABLE'] = True
+    app.config['SECURITY_TRACKABLE'] = True
+    app.config['SECURITY_CONFIRMABLE'] = True
 
     mail = Mail(app)
     app.extensions['mail'] = mail
