@@ -149,16 +149,9 @@ def register():
 
     _logger.debug('User %s registered' % user)
 
-<<<<<<< HEAD
-        return redirect(_security.post_register_view or
-                        _security.post_login_view)
-        
-        do_flash(form.errors, 'error')
-=======
     if not _security.confirmable or _security.login_without_confirmation:
         after_this_request(_commit)
         login_user(user)
->>>>>>> 25e9d02a8ad30307cc00ac469c671592b18ac45e
 
     post_register_url = get_url(_security.post_register_view)
     post_login_url = get_url(_security.post_login_view)
