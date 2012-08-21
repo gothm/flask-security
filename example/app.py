@@ -27,8 +27,8 @@ def create_roles():
 
 
 def create_users():
-    for u in  (('matt@lp.com', 'password', ['admin'], True),
-               ('tiya@lp.com', 'password', [], False)):
+    for u in  (('hello@gotham.ws', 'password', ['admin'], True),
+               ('dev@gotham.ws', 'password', [], False)):
         current_app.security.datastore.create_user(
             email=u[0], password=encrypt_password(u[1]), roles=u[2], active=u[3])
     current_app.security.datastore._commit()
