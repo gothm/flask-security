@@ -30,9 +30,6 @@ def create_roles():
 
 def create_users():
     for u in  (('matt@lp.com', 'password', ['admin'], True),
-               ('joe@lp.com', 'password', ['editor'], True),
-               ('dave@lp.com', 'password', ['admin', 'editor'], True),
-               ('jill@lp.com', 'password', ['author'], True),
                ('tiya@lp.com', 'password', [], False)):
         current_app.security.datastore.create_user(
             email=u[0], password=encrypt_password(u[1]), roles=u[2], active=u[3])
@@ -233,46 +230,7 @@ def create_sqlalchemy_app(auth_config=None, register_blueprint=True):
 
     return app
 
-
-def create_mongoengine_app(auth_config=None):
-    app = create_app(auth_config)
-    app.config['MONGODB_DB'] = 'flask_security_test'
-    app.config['MONGODB_HOST'] = 'localhost'
-    app.config['MONGODB_PORT'] = 27017
-
-    db = MongoEngine(app)
-    app.db = db
-
-    class Role(db.Document, RoleMixin):
-        name = db.StringField(required=True, unique=True, max_length=80)
-        description = db.StringField(max_length=255)
-
-    class User(db.Document, UserMixin):
-        email = db.StringField(unique=True, max_length=255)
-        password = db.StringField(required=True, max_length=255)
-        last_login_at = db.DateTimeField()
-        current_login_at = db.DateTimeField()
-        last_login_ip = db.StringField(max_length=100)
-        current_login_ip = db.StringField(max_length=100)
-        login_count = db.IntField()
-        active = db.BooleanField(default=True)
-        confirmed_at = db.DateTimeField()
-        roles = db.ListField(db.ReferenceField(Role), default=[])
-
-    app.security = Security(app, MongoEngineUserDatastore(db, User, Role))
-
-    @app.before_first_request
-    def before_first_request():
-        User.drop_collection()
-        Role.drop_collection()
-        populate_data()
-
-    add_ctx_processors(app)
-
-    return app
-
 app = create_sqlalchemy_app()
 
 if __name__ == '__main__':
-    #app = create_mongoengine_app()
     app.run(host='0.0.0.0',debug=True)
