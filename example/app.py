@@ -19,6 +19,7 @@ from flask.ext.security.datastore import SQLAlchemyUserDatastore, \
 from flask.ext.security.decorators import http_auth_required, \
      auth_token_required
 from flask.ext.security.exceptions import RoleNotFoundError
+from flask.ext.security.utils import encrypt_password
 
 
 def create_roles():
@@ -34,7 +35,7 @@ def create_users():
                ('jill@lp.com', 'password', ['author'], True),
                ('tiya@lp.com', 'password', [], False)):
         current_app.security.datastore.create_user(
-            email=u[0], password=u[1], roles=u[2], active=u[3])
+            email=u[0], password=encrypt_password(u[1]), roles=u[2], active=u[3])
     current_app.security.datastore._commit()
 
 
@@ -81,7 +82,8 @@ def create_app(auth_config):
     app.config['SECRET_KEY'] = 'f\x91yx_\xb0\x8d\x9b!`+h\xf5\xb1x:\xf2\x033\xfd\xb3\x948\x97' 
     app.config['SECURITY_REGISTERABLE'] = True
 
-    app.mail = Mail(app)
+    mail = Mail(app)
+    app.extensions['mail'] = mail
 
     if auth_config:
         for key, value in auth_config.items():

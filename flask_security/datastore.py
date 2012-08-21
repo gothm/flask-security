@@ -12,7 +12,7 @@
 from flask import current_app
 from werkzeug.local import LocalProxy
 
-from . import exceptions, utils
+from . import exceptions
 
 # Convenient references
 _security = LocalProxy(lambda: current_app.extensions['security'])
@@ -28,6 +28,9 @@ class UserDatastore(object):
     :param user_model: A user model class definition
     :param role_model: A role model class definition
     """
+    pwd_context = None
+    default_roles = []
+
     def __init__(self, db, user_model, role_model):
         self.db = db
         self.user_model = user_model
@@ -82,7 +85,6 @@ class UserDatastore(object):
 
     def _prepare_create_user_args(self, **kwargs):
         kwargs.setdefault('active', True)
-        kwargs.setdefault('roles', _security.default_roles)
         roles = kwargs.get('roles', [])
 
         for i, role in enumerate(roles):
@@ -91,14 +93,6 @@ class UserDatastore(object):
             roles[i] = self.find_role(rn)
 
         kwargs['roles'] = roles
-        pwd_context = _security.pwd_context
-        pw = kwargs['password']
-
-        if not pwd_context.identify(pw):
-            pwd_hash = utils.encrypt_password(pw,
-                                              salt=_security.password_salt,
-                                              use_hmac=_security.password_hmac)
-            kwargs['password'] = pwd_hash
 
         return kwargs
 

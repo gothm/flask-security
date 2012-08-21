@@ -34,9 +34,8 @@ _default_config = {
     'URL_PREFIX': None,
     'FLASH_MESSAGES': True,
     'PASSWORD_HASH': 'plaintext',
-    'PASSWORD_SALT': None,
     'PASSWORD_HMAC': False,
-    'AUTH_URL': '/auth',
+    'PASSWORD_HMAC_SALT': None,
     'LOGIN_URL': '/login',
     'LOGOUT_URL': '/logout',
     'REGISTER_URL': '/register',
@@ -44,7 +43,6 @@ _default_config = {
     'CONFIRM_URL': '/confirm',
     'POST_LOGIN_VIEW': '/',
     'POST_LOGOUT_VIEW': '/',
-    'POST_FORGOT_VIEW': None,
     'CONFIRM_ERROR_VIEW': None,
     'POST_REGISTER_VIEW': None,
     'POST_CONFIRM_VIEW': None,
@@ -65,7 +63,6 @@ _default_config = {
     'TOKEN_AUTHENTICATION_HEADER': 'X-Auth-Token',
     'CONFIRM_SALT': 'confirm-salt',
     'RESET_SALT': 'reset-salt',
-    'AUTH_SALT': 'auth-salt',
     'LOGIN_SALT': 'login-salt',
     'REMEMBER_SALT': 'remember-salt',
     'DEFAULT_HTTP_AUTH_REALM': 'Login Required'
@@ -78,6 +75,7 @@ _default_messages = {
     'EMAIL_CONFIRMED': ('Thank you. Your email has been confirmed.', 'success'),
     'ALREADY_CONFIRMED': ('Your email has already been confirmed.', 'info'),
     'INVALID_CONFIRMATION_TOKEN': ('Invalid confirmation token.', 'error'),
+    'ALREADY_CONFIRMED': ('This email has already been confirmed', 'info'),
     'PASSWORD_RESET_REQUEST': ('Instructions to reset your password have been sent to %(email)s.', 'info'),
     'PASSWORD_RESET_EXPIRED': ('You did not reset your password within %(within)s. New instructions have been sent to %(email)s.', 'error'),
     'INVALID_RESET_PASSWORD_TOKEN': ('Invalid reset password token.', 'error'),
@@ -161,10 +159,6 @@ def _get_reset_serializer(app):
 
 def _get_confirm_serializer(app):
     return _get_serializer(app, app.config['SECURITY_CONFIRM_SALT'])
-
-
-def _get_token_auth_serializer(app):
-    return _get_serializer(app, app.config['SECURITY_AUTH_SALT'])
 
 
 def _get_login_serializer(app):
@@ -280,6 +274,7 @@ class Security(object):
         :param app: The application.
         :param datastore: An instance of a user datastore.
         """
+        datastore = datastore or self.datastore
 
         for key, value in _default_config.items():
             app.config.setdefault('SECURITY_' + key, value)
@@ -297,7 +292,7 @@ class Security(object):
                                         template_folder='templates')
             app.register_blueprint(bp)
 
-        state = self._get_state(app, datastore or self.datastore)
+        state = self._get_state(app, datastore)
 
         app.extensions['security'] = state
 
@@ -323,7 +318,6 @@ class Security(object):
                 ('principal', _get_principal(app)),
                 ('pwd_context', _get_pwd_context(app)),
                 ('remember_token_serializer', _get_remember_token_serializer(app)),
-                ('token_auth_serializer', _get_token_auth_serializer(app)),
                 ('context_processors', {})]:
             kwargs[key] = value
 
@@ -384,9 +378,7 @@ class AuthenticationProvider(object):
             raise exceptions.ConfirmationError('Email requires confirmation.', user)
 
         # compare passwords
-        if verify_password(password, user.password,
-                           salt=_security.password_salt,
-                           use_hmac=_security.password_hmac):
+        if verify_password(password, user.password):
             return user
 
         # bad match
