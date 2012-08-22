@@ -80,6 +80,13 @@ def create_app(auth_config):
     app.config['SECURITY_RECOVERABLE'] = True
     app.config['SECURITY_TRACKABLE'] = True
     app.config['SECURITY_CONFIRMABLE'] = True
+    app.config['MAIL_SERVER'] = 'localhost'
+    app.config['MAIL_PORT'] = 587
+    app.config['MAIL_USE_TLS'] = True
+    app.config['MAIL_DEBUG'] = True
+    app.config['MAIL_USERNAME'] = 'no-reply@localhost'
+    app.config['MAIL_PASSWORD'] = 'password'
+    app.config['POST_LOGIN_VIEW'] = '/dashboard'
 
     mail = Mail(app)
     app.extensions['mail'] = mail
@@ -180,6 +187,11 @@ def create_app(auth_config):
             ds.find_role('bogus')
         except RoleNotFoundError:
             return 'success'
+
+    
+    @app.route('/dashboard')
+    def dashboard():
+        return render_template('dashboard.html')
 
     return app
 
