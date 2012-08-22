@@ -1,12 +1,13 @@
 {% macro render_field_with_errors(field) %}
-  <p>
+  <p {% if field.errors %} class="errors" {% endif %}>
     {{ field.label }} {{ field(**kwargs)|safe }}
     {% if field.errors %}
-      <ul>
+      <div class="alert alert-error">
+	<button data-dismiss="alert" class="close">×</button>
       {% for error in field.errors %}
-        <li>{{ error }}</li>
+        {{ error }}
       {% endfor %}
-      </ul>
+      </div>
     {% endif %}
   </p>
 {% endmacro %}
