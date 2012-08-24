@@ -12,6 +12,7 @@
 import base64
 import hashlib
 import hmac
+import os
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from functools import wraps
@@ -20,7 +21,9 @@ from flask import url_for, flash, current_app, request, session, redirect, \
      render_template
 from flask.ext.login import login_user as _login_user, \
      logout_user as _logout_user
+from flask.ext.mail import Message
 from flask.ext.principal import Identity, AnonymousIdentity, identity_changed
+from itsdangerous import BadSignature, SignatureExpired
 from werkzeug.local import LocalProxy
 
 from .core import current_user
@@ -35,9 +38,6 @@ _datastore = LocalProxy(lambda: _security.datastore)
 
 _pwd_context = LocalProxy(lambda: _security.pwd_context)
 
-_logger = LocalProxy(lambda: current_app.logger)
-
-
 def anonymous_user_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
@@ -50,8 +50,7 @@ def anonymous_user_required(f):
 def login_user(user, remember=True):
     """Performs the login and sends the appropriate signal."""
 
-    if not _login_user(user, remember):
-        return False
+    _login_user(user, remember)
 
     if _security.trackable:
         old_current, new_current = user.current_login_at, datetime.utcnow()
@@ -68,8 +67,6 @@ def login_user(user, remember=True):
     _datastore._save_model(user)
     identity_changed.send(current_app._get_current_object(),
                           identity=Identity(user.id))
-    _logger.debug('User %s logged in' % user)
-    return True
 
 
 def logout_user():
@@ -80,33 +77,24 @@ def logout_user():
     _logout_user()
 
 
-def get_hmac(msg, salt=None, digestmod=None):
-    digestmod = digestmod or hashlib.sha512
-    return base64.b64encode(hmac.new(salt, msg, digestmod).digest())
+def get_hmac(password):
+    if _security.password_hash == 'plaintext':
+        return password
+
+    if _security.password_salt is None:
+        raise RuntimeError('The configuration value `SECURITY_PASSWORD_SALT` '
+            'must not be None when the value of `SECURITY_PASSWORD_HASH` is '
+            'set to "%s"' % _security.password_hash)
+
+    h = hmac.new(_security.password_salt, password, hashlib.sha512)
+    return base64.b64encode(h.digest())
+
+def verify_password(password, password_hash):
+    return _pwd_context.verify(get_hmac(password), password_hash)
 
 
-def verify_password(password, password_hash, use_hmac=None):
-    if use_hmac is None:
-        use_hmac = _security.password_hmac
-
-    if use_hmac:
-        hmac_value = get_hmac(password, _security.password_hmac_salt)
-    else:
-        hmac_value = password
-
-    return _pwd_context.verify(hmac_value, password_hash)
-
-
-def encrypt_password(password, salt=None, use_hmac=None):
-    if use_hmac is None:
-        use_hmac = _security.password_hmac
-
-    if use_hmac:
-        hmac_value = get_hmac(password, _security.password_hmac_salt)
-    else:
-        hmac_value = password
-
-    return _pwd_context.encrypt(hmac_value)
+def encrypt_password(password):
+    return _pwd_context.encrypt(get_hmac(password))
 
 
 def md5(data):
@@ -230,7 +218,7 @@ def get_within_delta(key, app=None):
     return timedelta(**{values[1]: int(values[0])})
 
 
-def send_mail(subject, recipient, template, context=None):
+def send_mail(subject, recipient, template, **context):
     """Send an email via the Flask-Mail extension.
 
     :param subject: Email subject
@@ -238,10 +226,9 @@ def send_mail(subject, recipient, template, context=None):
     :param template: The name of the email template
     :param context: The context to render the template with
     """
-    from flask.ext.mail import Message
 
-    mail = current_app.extensions.get('mail')
-    context = context or {}
+    context.setdefault('security', _security)
+    context.update(_security._run_ctx_processor('mail'))
 
     msg = Message(subject,
                   sender=_security.email_sender,
@@ -250,7 +237,34 @@ def send_mail(subject, recipient, template, context=None):
     ctx = ('security/email', template)
     msg.body = render_template('%s/%s.txt' % ctx, **context)
     msg.html = render_template('%s/%s.html' % ctx, **context)
+
+    if _security._send_mail_task:
+        _security._send_mail_task(msg)
+        return
+
+    mail = current_app.extensions.get('mail')
     mail.send(msg)
+
+
+def get_token_status(token, serializer, max_age=None):
+    serializer = getattr(_security, serializer + '_serializer')
+    max_age = get_max_age(max_age)
+    user, data = None, None
+    expired, invalid = False, False
+
+    try:
+        data = serializer.loads(token, max_age=max_age)
+    except SignatureExpired:
+        d, data = serializer.loads_unsafe(token)
+        expired = True
+    except BadSignature:
+        invalid = True
+
+    if data:
+        user = _datastore.find_user(id=data[0])
+
+    expired = expired and (user is not None)
+    return expired, invalid, user
 
 
 @contextmanager

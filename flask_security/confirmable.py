@@ -11,12 +11,10 @@
 
 from datetime import datetime
 
-from itsdangerous import BadSignature, SignatureExpired
 from flask import current_app as app, request
 from werkzeug.local import LocalProxy
 
-from .exceptions import ConfirmationError
-from .utils import send_mail, get_max_age, md5, get_message, url_for_security
+from .utils import send_mail, md5, url_for_security, get_token_status
 from .signals import user_confirmed, confirm_instructions_sent
 
 
@@ -26,19 +24,24 @@ _security = LocalProxy(lambda: app.extensions['security'])
 _datastore = LocalProxy(lambda: _security.datastore)
 
 
+def generate_confirmation_link(user):
+    token = generate_confirmation_token(user)
+    url = url_for_security('confirm_email', token=token)
+    return request.url_root[:-1] + url, token
+
+
 def send_confirmation_instructions(user):
     """Sends the confirmation instructions email for the specified user.
 
     :param user: The user to send the instructions to
     :param token: The confirmation token
     """
-    token = generate_confirmation_token(user)
-    url = url_for_security('confirm_email', token=token)
-    confirmation_link = request.url_root[:-1] + url
-    ctx = dict(user=user, confirmation_link=confirmation_link)
+
+    confirmation_link, token = generate_confirmation_link(user)
 
     send_mail('Please confirm your email', user.email,
-              'confirmation_instructions', ctx)
+              'confirmation_instructions', user=user,
+              confirmation_link=confirmation_link)
 
     confirm_instructions_sent.send(user, app=app._get_current_object())
     return token
@@ -58,35 +61,22 @@ def requires_confirmation(user):
     return user.confirmed_at == None and _security.confirmable
 
 
-def confirm_by_token(token):
-    """Confirm the user given the specified token. If the token is invalid or
-    the user is already confirmed a `ConfirmationError` error will be raised.
-    If the token is expired a `TokenExpiredError` error will be raised.
+def confirm_email_token_status(token):
+    """Returns the expired status, invalid status, and user of a confirmation
+    token. For example::
 
-    :param token: The user's confirmation token
+        expired, invalid, user = confirm_email_token_status('...')
+
+    :param token: The confirmation token
     """
-    serializer = _security.confirm_serializer
-    max_age = get_max_age('CONFIRM_EMAIL')
+    return get_token_status(token, 'confirm', 'CONFIRM_EMAIL')
 
-    try:
-        data = serializer.loads(token, max_age=max_age)
-        user = _datastore.find_user(id=data[0])
 
-        if user.confirmed_at:
-            raise ConfirmationError(get_message('ALREADY_CONFIRMED')[0])
+def confirm_user(user):
+    """Confirms the specified user
 
-        user.confirmed_at = datetime.utcnow()
-        _datastore._save_model(user)
-        user_confirmed.send(user, app=app._get_current_object())
-        return user
-
-    except SignatureExpired:
-        sig_okay, data = serializer.loads_unsafe(token)
-        user = _datastore.find_user(id=data[0])
-        msg = get_message('CONFIRMATION_EXPIRED',
-                          within=_security.confirm_email_within,
-                          email=user.email)[0]
-        raise ConfirmationError(msg, user=user)
-
-    except BadSignature:
-        raise ConfirmationError(get_message('INVALID_CONFIRMATION_TOKEN')[0])
+    :param user: The user to confirm
+    """
+    user.confirmed_at = datetime.utcnow()
+    _datastore._save_model(user)
+    user_confirmed.send(user, app=app._get_current_object())

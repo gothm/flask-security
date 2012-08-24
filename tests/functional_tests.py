@@ -16,7 +16,6 @@ from flask.ext.security.utils import capture_registrations, \
      capture_reset_password_requests, capture_passwordless_login_requests
 from werkzeug.utils import parse_cookie
 
-from example import app
 from tests import SecurityTest
 
 
@@ -60,7 +59,7 @@ class DefaultSecurityTests(SecurityTest):
 
     def test_bad_password(self):
         r = self.authenticate(password="bogus")
-        self.assertIn("Password does not match", r.data)
+        self.assertIn("Invalid password", r.data)
 
     def test_inactive_user(self):
         r = self.authenticate("tiya@lp.com", "password")
@@ -135,7 +134,7 @@ class DefaultSecurityTests(SecurityTest):
         r = self.json_authenticate()
         data = json.loads(r.data)
         token = data['response']['user']['authentication_token']
-        headers = {"X-Auth-Token": token}
+        headers = {"Authentication-Token": token}
         r = self._get('/token', headers=headers)
         self.assertIn('Token Authentication', r.data)
 
@@ -144,7 +143,7 @@ class DefaultSecurityTests(SecurityTest):
         self.assertEqual(401, r.status_code)
 
     def test_token_auth_via_header_invalid_token(self):
-        r = self._get('/token', headers={"X-Auth-Token": 'X'})
+        r = self._get('/token', headers={"Authentication-Token": 'X'})
         self.assertEqual(401, r.status_code)
 
     def test_http_auth(self):
@@ -204,8 +203,7 @@ class ConfiguredSecurityTests(SecurityTest):
 
     AUTH_CONFIG = {
         'SECURITY_PASSWORD_HASH': 'bcrypt',
-        'SECURITY_PASSWORD_HMAC_SALT': 'so-salty',
-        'SECURITY_PASSWORD_HMAC': True,
+        'SECURITY_PASSWORD_SALT': 'so-salty',
         'SECURITY_REGISTERABLE': True,
         'SECURITY_LOGOUT_URL': '/custom_logout',
         'SECURITY_LOGIN_URL': '/custom_login',
@@ -263,6 +261,16 @@ class ConfiguredSecurityTests(SecurityTest):
         self.assertEquals('Basic realm="Custom Realm"', r.headers['WWW-Authenticate'])
 
 
+class BadConfiguredSecurityTests(SecurityTest):
+
+    AUTH_CONFIG = {
+        'SECURITY_PASSWORD_HASH': 'bcrypt',
+    }
+
+    def test_bad_configuration_raises_runtimer_error(self):
+        self.assertRaises(RuntimeError, self.authenticate)
+
+
 class RegisterableTests(SecurityTest):
     AUTH_CONFIG = {
         'SECURITY_REGISTERABLE': True
@@ -318,23 +326,13 @@ class ConfirmableTests(SecurityTest):
         msg = self.app.config['SECURITY_MSG_EMAIL_CONFIRMED'][0]
         self.assertIn(msg, r.data)
 
-    def test_confirm_email_twice_flashes_already_confirmed_message(self):
-        e = 'dude@lp.com'
-
-        with capture_registrations() as registrations:
-            self.register(e)
-            token = registrations[0]['confirm_token']
-
-        url = '/confirm/' + token
-        self.client.get(url, follow_redirects=True)
-        r = self.client.get(url, follow_redirects=True)
-
-        msg = self.app.config['SECURITY_MSG_ALREADY_CONFIRMED'][0]
-        self.assertIn(msg, r.data)
-
     def test_invalid_token_when_confirming_email(self):
         r = self.client.get('/confirm/bogus', follow_redirects=True)
         self.assertIn('Invalid confirmation token', r.data)
+
+    def test_send_confirmation_with_invalid_email(self):
+        r = self._post('/confirm', data=dict(email='bogus@bogus.com'))
+        self.assertIn('Specified user does not exist', r.data)
 
     def test_resend_confirmation(self):
         e = 'dude@lp.com'
@@ -363,7 +361,6 @@ class ExpiredConfirmationTest(SecurityTest):
             r = self.client.get('/confirm/' + token, follow_redirects=True)
 
             self.assertEqual(len(outbox), 1)
-            self.assertIn(e, outbox[0].html)
             self.assertNotIn(token, outbox[0].html)
 
             expire_text = self.AUTH_CONFIG['SECURITY_CONFIRM_EMAIL_WITHIN']
@@ -393,6 +390,15 @@ class RecoverableTests(SecurityTest):
         'SECURITY_RESET_PASSWORD_ERROR_VIEW': '/',
         'SECURITY_POST_FORGOT_VIEW': '/'
     }
+
+    def test_reset_view(self):
+        with capture_reset_password_requests() as requests:
+            r = self.client.post('/reset',
+                                 data=dict(email='joe@lp.com'),
+                                 follow_redirects=True)
+            t = requests[0]['token']
+        r = self._get('/reset/' + t)
+        self.assertIn('<h1>Reset password</h1>', r.data)
 
     def test_forgot_post_sends_email(self):
         with capture_reset_password_requests():
@@ -528,6 +534,10 @@ class PasswordlessTests(SecurityTest):
         r = self.client.get('/login/' + token, follow_redirects=True)
         self.assertNotIn(self.get_message('PASSWORDLESS_LOGIN_SUCCESSFUL'), r.data)
 
+    def test_send_login_with_invalid_email(self):
+        r = self._post('/login', data=dict(email='bogus@bogus.com'))
+        self.assertIn('Specified user does not exist', r.data)
+
 
 class ExpiredLoginTokenTests(SecurityTest):
 
@@ -560,7 +570,8 @@ class ExpiredLoginTokenTests(SecurityTest):
 class MongoEngineSecurityTests(DefaultSecurityTests):
 
     def _create_app(self, auth_config):
-        return app.create_mongoengine_app(auth_config)
+        from tests.test_app.mongoengine import create_app
+        return create_app(auth_config)
 
 
 class DefaultDatastoreTests(SecurityTest):
@@ -589,4 +600,24 @@ class DefaultDatastoreTests(SecurityTest):
 class MongoEngineDatastoreTests(DefaultDatastoreTests):
 
     def _create_app(self, auth_config):
-        return app.create_mongoengine_app(auth_config)
+        from tests.test_app.mongoengine import create_app
+        return create_app(auth_config)
+
+
+class AsyncMailTaskTests(SecurityTest):
+
+    AUTH_CONFIG = {
+        'SECURITY_RECOVERABLE': True,
+    }
+
+    def setUp(self):
+        super(AsyncMailTaskTests, self).setUp()
+        self.mail_sent = False
+
+    def test_send_email_task_is_called(self):
+        @self.app.security.send_mail_task
+        def send_email(msg):
+            self.mail_sent = True
+
+        self.client.post('/reset', data=dict(email='joe@lp.com'))
+        self.assertTrue(self.mail_sent)

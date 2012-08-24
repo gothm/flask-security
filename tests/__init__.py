@@ -1,6 +1,7 @@
-from unittest import TestCase
-from example import app
+# -*- coding: utf-8 -*-
 
+from unittest import TestCase
+from tests.test_app.sqlalchemy import create_app
 
 class SecurityTest(TestCase):
 
@@ -9,14 +10,15 @@ class SecurityTest(TestCase):
     def setUp(self):
         super(SecurityTest, self).setUp()
 
-        self.app = self._create_app(self.AUTH_CONFIG or None)
-        self.app.debug = False
-        self.app.config['TESTING'] = True
+        app = self._create_app(self.AUTH_CONFIG or {})
+        app.debug = False
+        app.config['TESTING'] = True
 
-        self.client = self.app.test_client()
+        self.app = app
+        self.client = app.test_client()
 
     def _create_app(self, auth_config):
-        return app.create_sqlalchemy_app(auth_config)
+        return create_app(auth_config)
 
     def _get(self, route, content_type=None, follow_redirects=None, headers=None):
         return self.client.get(route, follow_redirects=follow_redirects,
@@ -30,7 +32,7 @@ class SecurityTest(TestCase):
                 headers=headers)
 
     def register(self, email, password='password'):
-        data = dict(email=email, password=password, password_confirm=password)
+        data = dict(email=email, password=password)
         return self.client.post('/register', data=data, follow_redirects=True)
 
     def authenticate(self, email="matt@lp.com", password="password", endpoint=None, **kwargs):

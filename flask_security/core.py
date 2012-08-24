@@ -9,20 +9,18 @@
     :license: MIT, see LICENSE for more details.
 """
 
-from itsdangerous import URLSafeTimedSerializer
 from flask import current_app
 from flask.ext.login import AnonymousUser as AnonymousUserBase, \
      UserMixin as BaseUserMixin, LoginManager, current_user
 from flask.ext.principal import Principal, RoleNeed, UserNeed, Identity, \
      identity_loaded
+from itsdangerous import URLSafeTimedSerializer
 from passlib.context import CryptContext
 from werkzeug.datastructures import ImmutableList
 from werkzeug.local import LocalProxy
 
-from . import views, exceptions
-from .confirmable import requires_confirmation
-from .utils import config_value as cv, get_config, verify_password, md5, \
-     url_for_security
+from .utils import config_value as cv, get_config, md5, url_for_security
+from .views import create_blueprint
 
 # Convenient references
 _security = LocalProxy(lambda: current_app.extensions['security'])
@@ -34,8 +32,7 @@ _default_config = {
     'URL_PREFIX': None,
     'FLASH_MESSAGES': True,
     'PASSWORD_HASH': 'plaintext',
-    'PASSWORD_HMAC': False,
-    'PASSWORD_HMAC_SALT': None,
+    'PASSWORD_SALT': None,
     'LOGIN_URL': '/login',
     'LOGOUT_URL': '/logout',
     'REGISTER_URL': '/register',
@@ -48,7 +45,6 @@ _default_config = {
     'POST_CONFIRM_VIEW': None,
     'POST_RESET_VIEW': None,
     'UNAUTHORIZED_VIEW': None,
-    'DEFAULT_ROLES': [],
     'CONFIRMABLE': False,
     'REGISTERABLE': False,
     'RECOVERABLE': False,
@@ -60,7 +56,7 @@ _default_config = {
     'LOGIN_WITHOUT_CONFIRMATION': False,
     'EMAIL_SENDER': 'no-reply@localhost',
     'TOKEN_AUTHENTICATION_KEY': 'auth_token',
-    'TOKEN_AUTHENTICATION_HEADER': 'X-Auth-Token',
+    'TOKEN_AUTHENTICATION_HEADER': 'Authentication-Token',
     'CONFIRM_SALT': 'confirm-salt',
     'RESET_SALT': 'reset-salt',
     'LOGIN_SALT': 'login-salt',
@@ -93,19 +89,19 @@ _default_messages = {
 
 
 def _user_loader(user_id):
-    try:
-        return _security.datastore.find_user(id=user_id)
-    except:
-        return None
+    return _security.datastore.find_user(id=user_id)
 
 
 def _token_loader(token):
     try:
         data = _security.remember_token_serializer.loads(token)
         user = _security.datastore.find_user(id=data[0])
-        return user if md5(user.password) == data[1] else None
+        if user and md5(user.password) == data[1]:
+            return user
     except:
-        return None
+        pass
+
+    return None
 
 
 def _identity_loader():
@@ -145,25 +141,35 @@ def _get_pwd_context(app):
     return CryptContext(schemes=[pw_hash], default=pw_hash)
 
 
-def _get_serializer(app, salt):
-    secret_key = app.config.get('SECRET_KEY', 'secret-key')
+def _get_serializer(app, name):
+    secret_key = app.config.get('SECRET_KEY')
+    salt = app.config.get('SECURITY_%s_SALT' % name.upper())
     return URLSafeTimedSerializer(secret_key=secret_key, salt=salt)
 
 
-def _get_remember_token_serializer(app):
-    return _get_serializer(app, app.config['SECURITY_REMEMBER_SALT'])
+def _get_state(app, datastore, **kwargs):
+    for key, value in get_config(app).items():
+        kwargs[key.lower()] = value
+
+    kwargs.update(dict(
+        app=app,
+        datastore=datastore,
+        login_manager=_get_login_manager(app),
+        principal=_get_principal(app),
+        pwd_context=_get_pwd_context(app),
+        remember_token_serializer=_get_serializer(app, 'remember'),
+        login_serializer=_get_serializer(app, 'login'),
+        reset_serializer=_get_serializer(app, 'reset'),
+        confirm_serializer=_get_serializer(app, 'confirm'),
+        _context_processors={},
+        _send_mail_task=None
+    ))
+
+    return _SecurityState(**kwargs)
 
 
-def _get_reset_serializer(app):
-    return _get_serializer(app, app.config['SECURITY_RESET_SALT'])
-
-
-def _get_confirm_serializer(app):
-    return _get_serializer(app, app.config['SECURITY_CONFIRM_SALT'])
-
-
-def _get_login_serializer(app):
-    return _get_serializer(app, app.config['SECURITY_LOGIN_SALT'])
+def _context_processor():
+    return dict(url_for_security=url_for_security, security=_security)
 
 
 class RoleMixin(object):
@@ -213,28 +219,18 @@ class _SecurityState(object):
             setattr(self, key.lower(), value)
 
     def _add_ctx_processor(self, endpoint, fn):
-        c = self.context_processors
-
-        if endpoint not in c:
-            c[endpoint] = []
-
-        if fn not in c[endpoint]:
-            c[endpoint].append(fn)
+        group = self._context_processors.setdefault(endpoint, [])
+        fn not in group and group.append(fn)
 
     def _run_ctx_processor(self, endpoint):
         rv, fns = {}, []
-
-        for g in ['all', endpoint]:
-            if g in self.context_processors:
-                fns += self.context_processors[g]
-
-        for fn in fns:
-            rv.update(fn())
-
+        for g in [None, endpoint]:
+            for fn in self._context_processors.setdefault(g, []):
+                rv.update(fn())
         return rv
 
     def context_processor(self, fn):
-        self._add_ctx_processor('all', fn)
+        self._add_ctx_processor(None, fn)
 
     def forgot_password_context_processor(self, fn):
         self._add_ctx_processor('forgot_password', fn)
@@ -254,6 +250,12 @@ class _SecurityState(object):
     def send_login_context_processor(self, fn):
         self._add_ctx_processor('send_login', fn)
 
+    def mail_context_processor(self, fn):
+        self._add_ctx_processor('mail', fn)
+
+    def send_mail_task(self, fn):
+        self._send_mail_task = fn
+
 
 class Security(object):
     """The :class:`Security` class initializes the Flask-Security extension.
@@ -268,7 +270,7 @@ class Security(object):
         if app is not None and datastore is not None:
             self._state = self.init_app(app, datastore, **kwargs)
 
-    def init_app(self, app, datastore=None, register_blueprint=True):
+    def init_app(self, app, datastore=None):
         """Initializes the Flask-Security extension for the specified
         application and datastore implentation.
 
@@ -285,49 +287,12 @@ class Security(object):
 
         identity_loaded.connect_via(app)(_on_identity_loaded)
 
-        if register_blueprint:
-            name = cv('BLUEPRINT_NAME', app=app)
-            url_prefix = cv('URL_PREFIX', app=app)
-            bp = views.create_blueprint(app, name, __name__,
-                                        url_prefix=url_prefix,
-                                        template_folder='templates')
-            app.register_blueprint(bp)
-
-        state = self._get_state(app, datastore)
-
+        state = _get_state(app, datastore)
+        app.register_blueprint(create_blueprint(state, __name__))
+        app.context_processor(_context_processor)
         app.extensions['security'] = state
 
-        app.context_processor(lambda: dict(url_for_security=url_for_security,
-                                           security=state))
-
         return state
-
-    def _get_state(self, app, datastore):
-        assert app is not None
-        assert datastore is not None
-
-        kwargs = {}
-
-        for key, value in get_config(app).items():
-            kwargs[key.lower()] = value
-
-        for key, value in [
-                ('app', app),
-                ('datastore', datastore),
-                ('login_manager', _get_login_manager(app)),
-                ('principal', _get_principal(app)),
-                ('pwd_context', _get_pwd_context(app)),
-                ('remember_token_serializer', _get_remember_token_serializer(app)),
-                ('context_processors', {})]:
-            kwargs[key] = value
-
-        kwargs['login_serializer'] = (
-            _get_login_serializer(app) if kwargs['passwordless'] else None)
-        kwargs['reset_serializer'] = (
-            _get_reset_serializer(app) if kwargs['recoverable'] else None)
-        kwargs['confirm_serializer'] = (
-            _get_confirm_serializer(app) if kwargs['confirmable'] else None)
-        return _SecurityState(**kwargs)
 
     def __getattr__(self, name):
         return getattr(self._state, name, None)
