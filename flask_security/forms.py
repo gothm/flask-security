@@ -156,7 +156,7 @@ class LoginForm(Form, UserEmailFormMixin, PasswordFormMixin, NextFormMixin):
 
 
 class ConfirmRegisterForm(Form, RegisterFormMixin,
-                          UniqueEmailFormMixin, NewPasswordFormMixin):
+                          UniqueEmailFormMixin, NewPasswordFormMixin, PasswordConfirmFormMixin):
     def to_dict(self):
         return dict(email=self.email.data,
                     password=self.password.data)
