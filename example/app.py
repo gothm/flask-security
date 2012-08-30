@@ -23,7 +23,7 @@ from flask.ext.security.utils import encrypt_password
 def create_roles():
     for role in ('admin', 'editor', 'author'):
         current_app.security.datastore.create_role(name=role)
-    current_app.security.datastore._commit()
+    current_app.security.datastore.commit()
 
 
 def create_users():
@@ -31,7 +31,7 @@ def create_users():
                ('dev@gotham.ws', 'password', [], False)):
         current_app.security.datastore.create_user(
             email=u[0], password=encrypt_password(u[1]), roles=u[2], active=u[3])
-    current_app.security.datastore._commit()
+    current_app.security.datastore.commit()
 
 
 def populate_data():
@@ -196,7 +196,7 @@ def create_app(auth_config):
     return app
 
 
-def create_sqlalchemy_app(auth_config=None, register_blueprint=True):
+def create_sqlalchemy_app(auth_config=None):
     app = create_app(auth_config)
     app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://root@localhost/flask_security_test'
 
@@ -226,13 +226,12 @@ def create_sqlalchemy_app(auth_config=None, register_blueprint=True):
         roles = db.relationship('Role', secondary=roles_users,
                                 backref=db.backref('users', lazy='dynamic'))
 
-    app.security = Security(app, SQLAlchemyUserDatastore(db, User, Role),
-                            register_blueprint=register_blueprint)
+    app.security = Security(app, SQLAlchemyUserDatastore(db, User, Role))
 
-    if not register_blueprint:
-        from example import security
-        blueprint = security.create_blueprint(app, 'flask_security', __name__)
-        app.register_blueprint(blueprint)
+    #if not register_blueprint:
+    #    from example import security
+    #    blueprint = security.create_blueprint(app, 'flask_security', __name__)
+    #    app.register_blueprint(blueprint)
 
     @app.before_first_request
     def before_first_request():
