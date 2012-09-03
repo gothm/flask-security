@@ -1,14 +1,19 @@
 {% if security.registerable or security.recoverable or security.confirmabled %}
-<ul clas="nav nav-pills">
-  <li><a href="{{ url_for_security('login') }}">Login</a></li>
+{% set menu = [('/','Home'), (url_for_security('login'),'Login')] %}
+<ul class="nav nav-pills">
+
+        {% for l in menu: %}
+        <li {% if request.path == l[0]: %} class="active" {% endif %}><a href="{{ l[0] }}">{{ l[1] }}</a></li>
+        {% endfor %}
+
   {% if security.registerable %}
-  <li><a href="{{ url_for_security('register') }}">Register</a><br/></li>
+  <li {% if request.path == url_for_security('register') : %} class="active" {% endif %}><a href="{{ url_for_security('register') }}">Register</a><br/></li>
   {% endif %}
   {% if security.recoverable %}
-  <li><a href="{{ url_for_security('forgot_password') }}">Forgot password</a><br/></li>
+  <li {% if request.path == url_for_security('forgot_password'): %} class="active" {% endif %}><a href="{{ url_for_security('forgot_password') }}">Forgot password</a><br/></li>
   {% endif %}
   {% if security.confirmable %}
-  <li><a href="{{ url_for_security('send_confirmation') }}">Confirm account</a></li>
+  <li {% if request.path == url_for_security('send_confirmation'): %} class="active" {% endif %}><a href="{{ url_for_security('send_confirmation') }}">Confirm account</a></li>
   {% endif %}
 </ul>
 {% endif %}
