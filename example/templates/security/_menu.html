@@ -1,5 +1,12 @@
 {% if security.registerable or security.recoverable or security.confirmabled %}
 {% set menu = [('/','Home'), (url_for_security('login'),'Login')] %}
+
+<style type="text/css">
+.nav-tabs > .active > a, .nav-tabs > .active > a:hover {
+background-color:#eee;
+}
+</style>
+
 <ul class="nav nav-pills">
 
         {% for l in menu: %}
