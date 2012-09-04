@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+#-*- coding: utf-8 -*-
 
 # a little trick so you can run:
 # $ python example/app.py
@@ -16,9 +16,7 @@ from flask.ext.security import Security, LoginForm, PasswordlessLoginForm, \
 from flask.ext.security.datastore import SQLAlchemyUserDatastore
 from flask.ext.security.decorators import http_auth_required, \
      auth_token_required
-from flask.ext.security.exceptions import RoleNotFoundError
 from flask.ext.security.utils import encrypt_password
-
 
 def create_roles():
     for role in ('admin', 'editor', 'author'):
@@ -190,15 +188,16 @@ def create_app(auth_config):
 
     
     @app.route('/dashboard')
+    @login_required()
     def dashboard():
         return render_template('dashboard.html')
-
     return app
 
 
 def create_sqlalchemy_app(auth_config=None):
     app = create_app(auth_config)
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://root@localhost/flask_security_test'
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///flask_security.db'
+    #postgres://user:pass@localhost/flask_security'
 
     db = SQLAlchemy(app)
     app.db = db
@@ -247,3 +246,5 @@ app = create_sqlalchemy_app()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0',debug=True)
+
+
