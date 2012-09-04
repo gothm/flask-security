@@ -156,9 +156,5 @@ class GenerateBlueprintCommand(Command):
 
         print 'File generated successfully.'
         print output
-=======
         user_datastore.activate_user(user_identifier)
         print "User '%s' has been activated" % user_identifier
->>>>>>> 0ddbcdca06435d83188c5f8ba16c0c6f72940671
-=======
->>>>>>> da9f683c2231b79f8becf0bf18b9a32e5c3c005b
