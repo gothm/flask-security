@@ -16,7 +16,7 @@ from werkzeug.local import LocalProxy
 
 from .confirmable import send_confirmation_instructions, \
      confirm_user, confirm_email_token_status
-from .decorators import login_required
+from .decorators import login_required, anonymous_user_required
 from .forms import LoginForm, ConfirmRegisterForm, RegisterForm, \
      ForgotPasswordForm, ResetPasswordForm, SendConfirmationForm, \
      PasswordlessLoginForm
@@ -26,8 +26,7 @@ from .recoverable import reset_password_token_status, \
      send_reset_password_instructions, update_password
 from .registerable import register_user
 from .utils import get_url, get_post_login_redirect, do_flash, \
-     get_message, login_user, logout_user, anonymous_user_required, \
-     url_for_security as url_for
+     get_message, login_user, logout_user, url_for_security as url_for
 
 
 # Convenient references
@@ -36,7 +35,7 @@ _security = LocalProxy(lambda: current_app.extensions['security'])
 _datastore = LocalProxy(lambda: _security.datastore)
 
 
-def _render_json(form):
+def _render_json(form, include_auth_token=True):
     has_errors = len(form.errors) > 0
 
     if has_errors:
@@ -44,8 +43,10 @@ def _render_json(form):
         response = dict(errors=form.errors)
     else:
         code = 200
-        response = dict(user=dict(id=str(form.user.id),
-                        authentication_token=form.user.get_auth_token()))
+        response = dict(user=dict(id=str(form.user.id)))
+        if include_auth_token:
+            token = form.user.get_auth_token()
+            response['user']['authentication_token'] = token
 
     return jsonify(dict(meta=dict(code=code), response=response))
 
@@ -93,40 +94,54 @@ def logout():
                     get_url(_security.post_logout_view))
 
 
-@anonymous_user_required
 def register():
     """View function which handles a registration request."""
 
-    if _security.confirmable:
-        form = ConfirmRegisterForm()
+    if _security.confirmable or request.json:
+        form_class = ConfirmRegisterForm
     else:
-        form = RegisterForm()
+        form_class = RegisterForm
+
+    if request.json:
+        form_data = MultiDict(request.json)
+    else:
+        form_data = request.form
+
+    form = form_class(form_data)
 
     if form.validate_on_submit():
         user = register_user(**form.to_dict())
+        form.user = user
 
         if not _security.confirmable or _security.login_without_confirmation:
             after_this_request(_commit)
             login_user(user)
 
-        post_register_url = get_url(_security.post_register_view)
-        post_login_url = get_url(_security.post_login_view)
+        if not request.json:
+            post_register_url = get_url(_security.post_register_view)
+            post_login_url = get_url(_security.post_login_view)
+            return redirect(post_register_url or post_login_url)
 
-        return redirect(post_register_url or post_login_url)
+    if request.json:
+        return _render_json(form)
 
     return render_template('security/register_user.html',
                            register_user_form=form,
                            **_ctx('register'))
 
 
-@anonymous_user_required
 def send_login():
     """View function that sends login instructions for passwordless login"""
 
-    form = PasswordlessLoginForm()
+    if request.json:
+        form = PasswordlessLoginForm(MultiDict(request.json))
+    else:
+        form = PasswordlessLoginForm()
 
     if form.validate_on_submit():
         send_login_instructions(form.user)
+        if request.json:
+            return _render_json(form, False)
         do_flash(*get_message('LOGIN_EMAIL_SENT', email=form.user.email))
 
     return render_template('security/send_login.html',
@@ -137,6 +152,7 @@ def send_login():
 @anonymous_user_required
 def token_login(token):
     """View function that handles passwordless login via a token"""
+
     expired, invalid, user = login_token_status(token)
 
     if invalid:
@@ -155,14 +171,18 @@ def token_login(token):
     return redirect(get_post_login_redirect())
 
 
-@anonymous_user_required
 def send_confirmation():
     """View function which sends confirmation instructions."""
 
-    form = SendConfirmationForm()
+    if request.json:
+        form = SendConfirmationForm(MultiDict(request.json))
+    else:
+        form = SendConfirmationForm()
 
     if form.validate_on_submit():
         send_confirmation_instructions(form.user)
+        if request.json:
+            return _render_json(form, False)
         do_flash(*get_message('CONFIRMATION_REQUEST', email=form.user.email))
 
     return render_template('security/send_confirmation.html',
@@ -195,14 +215,18 @@ def confirm_email(token):
                     get_url(_security.post_login_view))
 
 
-@anonymous_user_required
 def forgot_password():
     """View function that handles a forgotten password request."""
 
-    form = ForgotPasswordForm()
+    if request.json:
+        form = ForgotPasswordForm(MultiDict(request.json))
+    else:
+        form = ForgotPasswordForm()
 
     if form.validate_on_submit():
         send_reset_password_instructions(form.user)
+        if request.json:
+            return _render_json(form, False)
         do_flash(*get_message('PASSWORD_RESET_REQUEST', email=form.user.email))
 
     return render_template('security/forgot_password.html',

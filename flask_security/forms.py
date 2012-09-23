@@ -42,8 +42,9 @@ def valid_user_email(form, field):
 
 class Form(BaseForm):
     def __init__(self, *args, **kwargs):
-        super(Form, self).__init__(csrf_enabled=not current_app.testing,
-                                   *args, **kwargs)
+        kwargs.setdefault('csrf_enabled', not current_app.testing)
+        super(Form, self).__init__(*args, **kwargs)
+
 
 class EmailFormMixin():
     email = TextField("Email Address",
@@ -131,9 +132,10 @@ class PasswordlessLoginForm(Form, UserEmailFormMixin):
         return True
 
 
-class LoginForm(Form, UserEmailFormMixin, PasswordFormMixin, NextFormMixin):
+class LoginForm(Form, NextFormMixin):
     """The default login form"""
-
+    email = TextField('Email Address')
+    password = PasswordField('Password')
     remember = BooleanField("Remember Me")
     submit = SubmitField("Login")
 
@@ -141,7 +143,20 @@ class LoginForm(Form, UserEmailFormMixin, PasswordFormMixin, NextFormMixin):
         super(LoginForm, self).__init__(*args, **kwargs)
 
     def validate(self):
-        if not super(LoginForm, self).validate():
+        super(LoginForm, self).validate()
+
+        if self.email.data.strip() == '':
+            self.email.errors.append('Email not provided')
+            return False
+
+        if self.password.data.strip() == '':
+            self.email.errors.append('Password not provided')
+            return False
+
+        self.user = _datastore.find_user(email=self.email.data)
+
+        if self.user is None:
+            self.email.errors.append('Specified user does not exist')
             return False
         if not verify_password(self.password.data, self.user.password):
             self.password.errors.append('Invalid password')

@@ -49,10 +49,6 @@ class DefaultSecurityTests(SecurityTest):
         r = self.authenticate(password="")
         self.assertIn("Password not provided", r.data)
 
-    def test_invalid_email(self):
-        r = self.authenticate(email="bogus")
-        self.assertIn("Invalid email address", r.data)
-
     def test_invalid_user(self):
         r = self.authenticate(email="bogus@bogus.com")
         self.assertIn("Specified user does not exist", r.data)
@@ -117,7 +113,9 @@ class DefaultSecurityTests(SecurityTest):
 
     def test_ok_json_auth(self):
         r = self.json_authenticate()
-        self.assertIn('"code": 200', r.data)
+        data = json.loads(r.data)
+        self.assertEquals(data['meta']['code'], 200)
+        self.assertIn('authentication_token', data['response']['user'])
 
     def test_invalid_json_auth(self):
         r = self.json_authenticate(password='junk')
@@ -199,11 +197,22 @@ class DefaultSecurityTests(SecurityTest):
         self.assertNotIn('BadSignature', r.data)
 
 
-class ConfiguredSecurityTests(SecurityTest):
+class ConfiguredPasswordHashSecurityTests(SecurityTest):
 
     AUTH_CONFIG = {
         'SECURITY_PASSWORD_HASH': 'bcrypt',
         'SECURITY_PASSWORD_SALT': 'so-salty',
+        'USER_COUNT': 1
+    }
+
+    def test_authenticate(self):
+        r = self.authenticate(endpoint="/login")
+        self.assertIn('Home Page', r.data)
+
+
+class ConfiguredSecurityTests(SecurityTest):
+
+    AUTH_CONFIG = {
         'SECURITY_REGISTERABLE': True,
         'SECURITY_LOGOUT_URL': '/custom_logout',
         'SECURITY_LOGIN_URL': '/custom_login',
@@ -239,6 +248,14 @@ class ConfiguredSecurityTests(SecurityTest):
         r = self._post('/register', data=data, follow_redirects=True)
         self.assertIn('Post Register', r.data)
 
+    def test_register_json(self):
+        r = self._post('/register',
+                       data='{ "email": "dude@lp.com", "password": "password" }',
+                       content_type='application/json')
+        data = json.loads(r.data)
+        self.assertEquals(data['meta']['code'], 200)
+        self.assertIn('authentication_token', data['response']['user'])
+
     def test_register_existing_email(self):
         data = dict(email='matt@lp.com',
                     password='password',
@@ -265,6 +282,7 @@ class BadConfiguredSecurityTests(SecurityTest):
 
     AUTH_CONFIG = {
         'SECURITY_PASSWORD_HASH': 'bcrypt',
+        'USER_COUNT': 1
     }
 
     def test_bad_configuration_raises_runtimer_error(self):
@@ -273,7 +291,8 @@ class BadConfiguredSecurityTests(SecurityTest):
 
 class RegisterableTests(SecurityTest):
     AUTH_CONFIG = {
-        'SECURITY_REGISTERABLE': True
+        'SECURITY_REGISTERABLE': True,
+        'USER_COUNT': 1
     }
 
     def test_register_valid_user(self):
@@ -286,7 +305,8 @@ class RegisterableTests(SecurityTest):
 class ConfirmableTests(SecurityTest):
     AUTH_CONFIG = {
         'SECURITY_CONFIRMABLE': True,
-        'SECURITY_REGISTERABLE': True
+        'SECURITY_REGISTERABLE': True,
+        'USER_COUNT': 1
     }
 
     def test_login_before_confirmation(self):
@@ -345,7 +365,8 @@ class ExpiredConfirmationTest(SecurityTest):
     AUTH_CONFIG = {
         'SECURITY_CONFIRMABLE': True,
         'SECURITY_REGISTERABLE': True,
-        'SECURITY_CONFIRM_EMAIL_WITHIN': '1 seconds'
+        'SECURITY_CONFIRM_EMAIL_WITHIN': '1 milliseconds',
+        'USER_COUNT': 1
     }
 
     def test_expired_confirmation_token_sends_email(self):
@@ -355,7 +376,7 @@ class ExpiredConfirmationTest(SecurityTest):
             self.register(e)
             token = registrations[0]['confirm_token']
 
-        time.sleep(3)
+        time.sleep(1.25)
 
         with self.app.extensions['mail'].record_messages() as outbox:
             r = self.client.get('/confirm/' + token, follow_redirects=True)
@@ -372,7 +393,8 @@ class LoginWithoutImmediateConfirmTests(SecurityTest):
     AUTH_CONFIG = {
         'SECURITY_CONFIRMABLE': True,
         'SECURITY_REGISTERABLE': True,
-        'SECURITY_LOGIN_WITHOUT_CONFIRMATION': True
+        'SECURITY_LOGIN_WITHOUT_CONFIRMATION': True,
+        'USER_COUNT': 1
     }
 
     def test_register_valid_user_automatically_signs_in(self):
@@ -441,7 +463,7 @@ class ExpiredResetPasswordTest(SecurityTest):
 
     AUTH_CONFIG = {
         'SECURITY_RECOVERABLE': True,
-        'SECURITY_RESET_PASSWORD_WITHIN': '1 seconds'
+        'SECURITY_RESET_PASSWORD_WITHIN': '1 milliseconds'
     }
 
     def test_reset_password_with_expired_token(self):
@@ -451,7 +473,7 @@ class ExpiredResetPasswordTest(SecurityTest):
                                  follow_redirects=True)
             t = requests[0]['token']
 
-        time.sleep(2)
+        time.sleep(1)
 
         r = self.client.post('/reset/' + t, data={
             'password': 'newpassword',
@@ -464,7 +486,8 @@ class ExpiredResetPasswordTest(SecurityTest):
 class TrackableTests(SecurityTest):
 
     AUTH_CONFIG = {
-        'SECURITY_TRACKABLE': True
+        'SECURITY_TRACKABLE': True,
+        'USER_COUNT': 1
     }
 
     def test_did_track(self):
@@ -485,7 +508,7 @@ class TrackableTests(SecurityTest):
 class PasswordlessTests(SecurityTest):
 
     AUTH_CONFIG = {
-        'SECURITY_PASSWORDLESS': True,
+        'SECURITY_PASSWORDLESS': True
     }
 
     def test_login_request_for_inactive_user(self):
@@ -544,7 +567,8 @@ class ExpiredLoginTokenTests(SecurityTest):
 
     AUTH_CONFIG = {
         'SECURITY_PASSWORDLESS': True,
-        'SECURITY_LOGIN_WITHIN': '1 seconds'
+        'SECURITY_LOGIN_WITHIN': '1 milliseconds',
+        'USER_COUNT': 1
     }
 
     def test_expired_login_token_sends_email(self):
@@ -554,18 +578,18 @@ class ExpiredLoginTokenTests(SecurityTest):
             self.client.post('/login', data=dict(email=e), follow_redirects=True)
             token = requests[0]['login_token']
 
-        time.sleep(3)
+        time.sleep(1.25)
 
         with self.app.extensions['mail'].record_messages() as outbox:
             r = self.client.get('/login/' + token, follow_redirects=True)
 
-            self.assertEqual(len(outbox), 1)
-            self.assertIn(e, outbox[0].html)
-            self.assertNotIn(token, outbox[0].html)
-
             expire_text = self.AUTH_CONFIG['SECURITY_LOGIN_WITHIN']
             msg = self.app.config['SECURITY_MSG_LOGIN_EXPIRED'][0] % dict(within=expire_text, email=e)
             self.assertIn(msg, r.data)
+
+            self.assertEqual(len(outbox), 1)
+            self.assertIn(e, outbox[0].html)
+            self.assertNotIn(token, outbox[0].html)
 
 
 class MongoEngineSecurityTests(DefaultSecurityTests):
@@ -609,6 +633,7 @@ class AsyncMailTaskTests(SecurityTest):
 
     AUTH_CONFIG = {
         'SECURITY_RECOVERABLE': True,
+        'USER_COUNT': 1
     }
 
     def setUp(self):
@@ -620,11 +645,15 @@ class AsyncMailTaskTests(SecurityTest):
         def send_email(msg):
             self.mail_sent = True
 
-        self.client.post('/reset', data=dict(email='joe@lp.com'))
+        self.client.post('/reset', data=dict(email='matt@lp.com'))
         self.assertTrue(self.mail_sent)
 
 
 class NoBlueprintTests(SecurityTest):
+
+    AUTH_CONFIG = {
+        'USER_COUNT': 1
+    }
 
     def _create_app(self, auth_config):
         return super(NoBlueprintTests, self)._create_app(auth_config, False)
@@ -635,6 +664,6 @@ class NoBlueprintTests(SecurityTest):
 
     def test_http_auth_without_blueprint(self):
         r = self._get('/http', headers={
-            'Authorization': 'Basic ' + base64.b64encode("joe@lp.com:password")
+            'Authorization': 'Basic ' + base64.b64encode("matt@lp.com:password")
         })
         self.assertIn('HTTP Authentication', r.data)
