@@ -22,8 +22,6 @@ setup(
     name='Flask-Security',
     version='1.5.1-dev',
     url='https://github.com/gothm/flask-security',
-    version='1.5.1-dev',
-    url='https://github.com/mattupstate/flask-security',
     license='MIT',
     author=('Matthew Wright','Gotham Workspace'),
     author_email=('matt@nobien.net','hello@gotham.ws'),
