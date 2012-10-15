@@ -91,7 +91,7 @@ def set_filename_version(filename, version_number, pattern):
 
 def set_init_version(version):
     info('Setting __init__.py version to %s', version)
-    set_filename_version('flask_principal/__init__.py', version, '__version__')
+    set_filename_version('flask_security/__init__.py', version, '__version__')
 
 
 def set_setup_version(version):
@@ -133,6 +133,7 @@ def make_git_commit(message, *args):
 def make_git_tag(tag):
     info('Tagging "%s"', tag)
     Popen(['git', 'tag', '-a', tag, '-m', '%s release' % tag]).wait()
+    Popen(['git', 'push', '--tags']).wait()
 
 
 def update_version(version):

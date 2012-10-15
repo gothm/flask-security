@@ -16,13 +16,10 @@ class User(UserMixin):
         self.email = email
         self.roles = roles
 
-<<<<<<< HEAD
-=======
 # set the models or we'll get errors
 flask_security.User = User
 flask_security.Role = Role
 
->>>>>>> 0ddbcdca06435d83188c5f8ba16c0c6f72940671
 admin = Role('admin')
 admin2 = Role('admin')
 editor = Role('editor')
