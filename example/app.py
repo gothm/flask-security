@@ -85,6 +85,7 @@ def create_app(auth_config):
     app.config['MAIL_USERNAME'] = 'no-reply@localhost'
     app.config['MAIL_PASSWORD'] = 'password'
     app.config['SECURITY_POST_LOGIN_VIEW'] = '/dashboard'
+    app.config['SECURITY_SALT'] = app.config['SECRET_KEY']
 
     mail = Mail(app)
     app.extensions['mail'] = mail
@@ -188,7 +189,7 @@ def create_app(auth_config):
 
     
     @app.route('/dashboard')
-    @login_required()
+    @login_required
     def dashboard():
         return render_template('dashboard.html')
     return app
