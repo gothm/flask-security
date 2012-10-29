@@ -61,7 +61,8 @@ _default_config = {
     'RESET_SALT': 'reset-salt',
     'LOGIN_SALT': 'login-salt',
     'REMEMBER_SALT': 'remember-salt',
-    'DEFAULT_HTTP_AUTH_REALM': 'Login Required'
+    'DEFAULT_HTTP_AUTH_REALM': 'Login Required',
+    'HMAC':False,
 }
 
 #: Default Flask-Security messages

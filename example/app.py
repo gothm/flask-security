@@ -85,7 +85,9 @@ def create_app(auth_config):
     app.config['MAIL_USERNAME'] = 'no-reply@localhost'
     app.config['MAIL_PASSWORD'] = 'password'
     app.config['SECURITY_POST_LOGIN_VIEW'] = '/dashboard'
-    app.config['SECURITY_SALT'] = app.config['SECRET_KEY']
+    app.config['SECURITY_PASSWORD_SALT'] = app.config['SECRET_KEY']
+    app.config['SECURITY_PASSWORD_HASH'] = 'bcrypt'
+    app.config['SECURITY_HMAC'] = False
 
     mail = Mail(app)
     app.extensions['mail'] = mail

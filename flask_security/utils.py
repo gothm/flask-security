@@ -66,9 +66,13 @@ def logout_user():
 
 
 def get_hmac(password):
-    if _security.password_hash == 'plaintext':
+
+    if current_app.config['SECURITY_HMAC']:
         return password
 
+    if _security.password_hash == 'plaintext':
+        return password
+    
     if _security.password_salt is None:
         raise RuntimeError('The configuration value `SECURITY_PASSWORD_SALT` '
             'must not be None when the value of `SECURITY_PASSWORD_HASH` is '
