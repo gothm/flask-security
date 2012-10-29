@@ -67,10 +67,7 @@ def logout_user():
 
 def get_hmac(password):
 
-    if current_app.config['SECURITY_HMAC']:
-        return password
-
-    if _security.password_hash == 'plaintext':
+    if _security.password_hash == 'plaintext' or current_app.config['SECURITY_HMAC'] is False:
         return password
     
     if _security.password_salt is None:
