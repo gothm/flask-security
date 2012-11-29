@@ -20,8 +20,13 @@ from setuptools import setup
 
 setup(
     name='Flask-Security',
+<<<<<<< HEAD
     version='1.5.1-dev',
     url='https://github.com/gothm/flask-security',
+=======
+    version='1.5.1',
+    url='https://github.com/mattupstate/flask-security',
+>>>>>>> 1092ffc9ea55d7daa8fc5c14a8861e92ea555814
     license='MIT',
     author=('Matthew Wright','Gotham Workspace'),
     author_email=('matt@nobien.net','hello@gotham.ws'),

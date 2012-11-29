@@ -14,7 +14,8 @@ from datetime import datetime
 from flask import current_app as app, request
 from werkzeug.local import LocalProxy
 
-from .utils import send_mail, md5, url_for_security, get_token_status
+from .utils import send_mail, md5, url_for_security, get_token_status,\
+     config_value
 from .signals import user_confirmed, confirm_instructions_sent
 
 
@@ -39,7 +40,7 @@ def send_confirmation_instructions(user):
 
     confirmation_link, token = generate_confirmation_link(user)
 
-    send_mail('Please confirm your email', user.email,
+    send_mail(config_value('EMAIL_SUBJECT_CONFIRM'), user.email,
               'confirmation_instructions', user=user,
               confirmation_link=confirmation_link)
 
@@ -52,7 +53,7 @@ def generate_confirmation_token(user):
 
     :param user: The user to work with
     """
-    data = [user.id, md5(user.email)]
+    data = [str(user.id), md5(user.email)]
     return _security.confirm_serializer.dumps(data)
 
 
