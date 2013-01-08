@@ -16,7 +16,7 @@ from flask.ext.wtf import Form as BaseForm, TextField, PasswordField, \
 from werkzeug.local import LocalProxy
 
 from .confirmable import requires_confirmation
-from .utils import verify_password, get_message
+from .utils import verify_and_update_password, get_message
 
 # Convenient reference
 _datastore = LocalProxy(lambda: current_app.extensions['security'].datastore)
@@ -42,7 +42,11 @@ def valid_user_email(form, field):
 
 class Form(BaseForm):
     def __init__(self, *args, **kwargs):
-        kwargs.setdefault('csrf_enabled', not current_app.testing)
+        if current_app.testing:
+            csrf_enabled = False
+        else:
+            csrf_enabled = request.json is None
+        kwargs.setdefault('csrf_enabled', csrf_enabled)
         super(Form, self).__init__(*args, **kwargs)
 
 
@@ -158,7 +162,7 @@ class LoginForm(Form, NextFormMixin):
         if self.user is None:
             self.email.errors.append('Specified user does not exist')
             return False
-        if not verify_password(self.password.data, self.user.password):
+        if not verify_and_update_password(self.password.data, self.user):
             self.password.errors.append('Invalid password')
             return False
         if requires_confirmation(self.user):

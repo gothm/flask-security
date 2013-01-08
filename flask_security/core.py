@@ -90,9 +90,21 @@ _default_messages = {
     'INVALID_LOGIN_TOKEN': ('Invalid login token.', 'error'),
     'DISABLED_ACCOUNT': ('Account is disabled.', 'error'),
     'PASSWORDLESS_LOGIN_SUCCESSFUL': ('You have successfuly logged in.', 'success'),
-    'PASSWORD_RESET': ('You successfully reset your password and you have been logged in automatically.', 'success')
+    'PASSWORD_RESET': ('You successfully reset your password and you have been logged in automatically.', 'success'),
+    'LOGIN': ('Please log in to access this page.', 'info'),
+    'REFRESH': ('Please reauthenticate to access this page.', 'info')
 }
 
+_allowed_password_hash_schemes = [
+    'bcrypt',
+    'des_crypt',
+    'pbkdf2_sha256',
+    'pbkdf2_sha512',
+    'sha256_crypt',
+    'sha512_crypt',
+    # And always last one...
+    'plaintext'
+]
 
 def _user_loader(user_id):
     return _security.datastore.find_user(id=user_id)
@@ -132,6 +144,10 @@ def _get_login_manager(app):
     lm.login_view = '%s.login' % cv('BLUEPRINT_NAME', app=app)
     lm.user_loader(_user_loader)
     lm.token_loader(_token_loader)
+    lm.login_message = cv('MSG_LOGIN', app=app)
+    lm.login_message_category = 'info'
+    lm.needs_refresh_message = cv('MSG_REFRESH', app=app)
+    lm.needs_refresh_message_category = 'info'
     lm.init_app(app)
     return lm
 
@@ -144,7 +160,10 @@ def _get_principal(app):
 
 def _get_pwd_context(app):
     pw_hash = cv('PASSWORD_HASH', app=app)
-    return CryptContext(schemes=[pw_hash], default=pw_hash)
+    if pw_hash not in _allowed_password_hash_schemes:
+        allowed = ', '.join(_allowed_password_hash_schemes[:-1]) + ' and ' + _allowed_password_hash_schemes[-1]
+        raise ValueError("Invalid hash scheme %r. Allowed values are %s" % (pw_hash, allowed))
+    return CryptContext(schemes=_allowed_password_hash_schemes, default=pw_hash)
 
 
 def _get_serializer(app, name):
