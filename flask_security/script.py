@@ -23,8 +23,6 @@ from .utils import encrypt_password
 
 
 _datastore = LocalProxy(lambda: current_app.extensions['security'].datastore)
->>>>>>> 7a04a857f2bd83efbd8383b749a303bb9cdaa045
-
 
 def pprint(obj):
     print json.dumps(obj, sort_keys=True, indent=4)
