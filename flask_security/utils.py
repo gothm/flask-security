@@ -27,7 +27,7 @@ from werkzeug.local import LocalProxy
 
 from .signals import user_registered, user_confirmed, \
     confirm_instructions_sent, login_instructions_sent, \
-    password_reset, reset_password_instructions_sent
+    password_reset, password_changed, reset_password_instructions_sent
 
 # Convenient references
 _security = LocalProxy(lambda: current_app.extensions['security'])
@@ -79,7 +79,7 @@ def get_hmac(password):
             'must not be None when the value of `SECURITY_PASSWORD_HASH` is '
             'set to "%s"' % _security.password_hash)
 
-    h = hmac.new(_security.password_salt, password, hashlib.sha512)
+    h = hmac.new(_security.password_salt, password.encode('utf-8'), hashlib.sha512)
     return base64.b64encode(h.digest())
 
 
@@ -374,6 +374,7 @@ def capture_signals():
     """Factory method that creates a `CaptureSignals` with all the flask_security signals."""
     return CaptureSignals([user_registered, user_confirmed,
                            confirm_instructions_sent, login_instructions_sent,
-                           password_reset, reset_password_instructions_sent])
+                           password_reset, password_changed,
+                           reset_password_instructions_sent])
 
 
