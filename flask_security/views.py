@@ -209,7 +209,8 @@ def confirm_email(token):
 
     expired, invalid, user = confirm_email_token_status(token)
 
-    if invalid:
+    if not user or invalid:
+        invalid = True
         do_flash(*get_message('INVALID_CONFIRMATION_TOKEN'))
     if expired:
         send_confirmation_instructions(user)
@@ -313,6 +314,7 @@ def create_blueprint(state, import_name):
 
     bp = Blueprint(state.blueprint_name, import_name,
                    url_prefix=state.url_prefix,
+                   subdomain=state.subdomain,
                    template_folder='templates')
 
     bp.route(state.logout_url, endpoint='logout')(logout)
