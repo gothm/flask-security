@@ -142,6 +142,13 @@ class DefaultSecurityTests(SecurityTest):
         })
         self.assertIn('HTTP Authentication', r.data)
 
+    def test_http_auth_no_authorization(self):
+        r = self._get('/http', headers={})
+        self.assertIn('<h1>Unauthorized</h1>', r.data)
+        self.assertIn('WWW-Authenticate', r.headers)
+        self.assertEquals('Basic realm="Login Required"',
+                          r.headers['WWW-Authenticate'])
+
     def test_invalid_http_auth_invalid_username(self):
         r = self._get('/http', headers={
             'Authorization': 'Basic ' + base64.b64encode("bogus:bogus")
@@ -224,11 +231,11 @@ class MongoEngineSecurityTests(DefaultSecurityTests):
         return create_app(auth_config, **kwargs)
 
 
-# class PeeweeSecurityTests(DefaultSecurityTests):
+class PeeweeSecurityTests(DefaultSecurityTests):
 
-#     def _create_app(self, auth_config, **kwargs):
-#         from tests.test_app.peewee_app import create_app
-#         return create_app(auth_config, **kwargs)
+    def _create_app(self, auth_config, **kwargs):
+        from tests.test_app.peewee_app import create_app
+        return create_app(auth_config, **kwargs)
 
 
 class DefaultDatastoreTests(SecurityTest):

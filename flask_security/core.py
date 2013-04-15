@@ -180,8 +180,14 @@ def _get_login_manager(app):
     lm.login_view = '%s.login' % cv('BLUEPRINT_NAME', app=app)
     lm.user_loader(_user_loader)
     lm.token_loader(_token_loader)
-    lm.login_message, lm.login_message_category = cv('MSG_LOGIN', app=app)
-    lm.needs_refresh_message, lm.needs_refresh_message_category = cv('MSG_REFRESH', app=app)
+
+    if cv('FLASH_MESSAGES', app=app):
+        lm.login_message, lm.login_message_category = cv('MSG_LOGIN', app=app)
+        lm.needs_refresh_message, lm.needs_refresh_message_category = cv('MSG_REFRESH', app=app)
+    else:
+        lm.login_message = None
+        lm.needs_refresh_message = None
+
     lm.init_app(app)
     return lm
 
@@ -242,8 +248,7 @@ class RoleMixin(object):
                 self.name == getattr(other, 'name', None))
 
     def __ne__(self, other):
-        return (self.name != other and
-                self.name != getattr(other, 'name', None))
+        return not self.__eq__(other)
 
 
 class UserMixin(BaseUserMixin):
@@ -262,7 +267,10 @@ class UserMixin(BaseUserMixin):
         """Returns `True` if the user identifies with the specified role.
 
         :param role: A role name or `Role` instance"""
-        return role in self.roles
+        if isinstance(role, basestring):
+            return role in (role.name for role in self.roles)
+        else:
+            return role in self.roles
 
 
 class AnonymousUser(AnonymousUserBase):
