@@ -11,9 +11,9 @@
 
 from flask import current_app
 from flask.ext.login import AnonymousUser as AnonymousUserBase, \
-     UserMixin as BaseUserMixin, LoginManager, current_user
+    UserMixin as BaseUserMixin, LoginManager, current_user
 from flask.ext.principal import Principal, RoleNeed, UserNeed, Identity, \
-     identity_loaded
+    identity_loaded
 from itsdangerous import URLSafeTimedSerializer
 from passlib.context import CryptContext
 from werkzeug.datastructures import ImmutableList
@@ -22,8 +22,8 @@ from werkzeug.local import LocalProxy
 from .utils import config_value as cv, get_config, md5, url_for_security
 from .views import create_blueprint
 from .forms import LoginForm, ConfirmRegisterForm, RegisterForm, \
-     ForgotPasswordForm, ChangePasswordForm, ResetPasswordForm, \
-     SendConfirmationForm, PasswordlessLoginForm
+    ForgotPasswordForm, ChangePasswordForm, ResetPasswordForm, \
+    SendConfirmationForm, PasswordlessLoginForm
 
 # Convenient references
 _security = LocalProxy(lambda: current_app.extensions['security'])
@@ -94,6 +94,7 @@ _default_messages = {
     'ALREADY_CONFIRMED': ('Your email has already been confirmed.', 'info'),
     'INVALID_CONFIRMATION_TOKEN': ('Invalid confirmation token.', 'error'),
     'EMAIL_ALREADY_ASSOCIATED': ('%(email)s is already associated with an account.', 'error'),
+    'USERNAME_ALREADY_ASSOCIATED': ('%(username)s is already associated with an account.', 'error'),
     'PASSWORD_MISMATCH': ('Password does not match', 'error'),
     'RETYPE_PASSWORD_MISMATCH': ('Passwords do not match', 'error'),
     'INVALID_REDIRECT': ('Redirections outside the domain are forbidden', 'error'),
@@ -108,6 +109,7 @@ _default_messages = {
     'INVALID_LOGIN_TOKEN': ('Invalid login token.', 'error'),
     'DISABLED_ACCOUNT': ('Account is disabled.', 'error'),
     'EMAIL_NOT_PROVIDED': ('Email not provided', 'error'),
+    'USERNAME_NOT_PROVIDED': ('Username not provided', 'error'),
     'INVALID_EMAIL_ADDRESS': ('Invalid email address', 'error'),
     'PASSWORD_NOT_PROVIDED': ('Password not provided', 'error'),
     'USER_DOES_NOT_EXIST': ('Specified user does not exist', 'error'),

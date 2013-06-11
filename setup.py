@@ -21,7 +21,7 @@ from setuptools import setup
 setup(
     name='Flask-Security',
     url='https://github.com/gothm/flask-security',
-    version='1.6.2',
+    version='1.6.3',
     license='MIT',
     author=('Matthew Wright','Gotham Workspace'),
     author_email=('matt@nobien.net','hello@gotham.ws'),

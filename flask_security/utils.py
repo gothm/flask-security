@@ -14,12 +14,13 @@ import blinker
 import functools
 import hashlib
 import hmac
+
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 
 from flask import url_for, flash, current_app, request, session, render_template
 from flask.ext.login import login_user as _login_user, \
-     logout_user as _logout_user
+    logout_user as _logout_user
 from flask.ext.mail import Message
 from flask.ext.principal import Identity, AnonymousIdentity, identity_changed
 from itsdangerous import BadSignature, SignatureExpired
@@ -145,11 +146,18 @@ def url_for_security(endpoint, **values):
     return url_for(endpoint, **values)
 
 
-def get_post_login_redirect():
-    """Returns the URL to redirect to after a user logs in successfully."""
+def get_post_action_redirect(config_key):
     return (get_url(request.args.get('next')) or
             get_url(request.form.get('next')) or
-            find_redirect('SECURITY_POST_LOGIN_VIEW'))
+            find_redirect(config_key))
+
+
+def get_post_login_redirect():
+    return get_post_action_redirect('SECURITY_POST_LOGIN_VIEW')
+
+
+def get_post_register_redirect():
+    return get_post_action_redirect('SECURITY_POST_REGISTER_VIEW')
 
 
 def find_redirect(key):

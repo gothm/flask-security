@@ -16,7 +16,7 @@ import flask_wtf as wtf
 
 from flask import request, current_app
 from flask_wtf import Form as BaseForm, TextField, PasswordField, \
-     SubmitField, HiddenField, BooleanField, ValidationError, Field
+    SubmitField, HiddenField, BooleanField, ValidationError, Field
 from flask_login import current_user
 from werkzeug.local import LocalProxy
 
@@ -39,8 +39,10 @@ _default_field_labels = {
     'retype_password': 'Retype Password',
     'new_password': 'New Password',
     'change_password': 'Change Password',
-    'send_login_link': 'Send Login Link'
-}
+    'send_login_link': 'Send Login Link',
+    'username': 'Username',
+    'create_account': 'Create Account',
+    }
 
 
 class ValidatorMixin(object):
@@ -69,7 +71,7 @@ class Length(ValidatorMixin, wtf.Length):
 email_required = Required(message='EMAIL_NOT_PROVIDED')
 email_validator = Email(message='INVALID_EMAIL_ADDRESS')
 password_required = Required(message='PASSWORD_NOT_PROVIDED')
-
+username_required = Required(message='USERNAME_NOT_PROVIDED')
 
 def get_form_field_label(key):
     return _default_field_labels.get(key, '')
@@ -80,6 +82,10 @@ def unique_user_email(form, field):
         msg = get_message('EMAIL_ALREADY_ASSOCIATED', email=field.data)[0]
         raise ValidationError(msg)
 
+def unique_user_name(form, field):
+    if _datastore.find_user(username=field.data) is not None:
+        msg = get_message('USERNAME_ALREADY_ASSOCIATED', username=field.data)[0]
+        raise ValidationError(msg)
 
 def valid_user_email(form, field):
     form.user = _datastore.find_user(email=field.data)
@@ -113,6 +119,11 @@ class UniqueEmailFormMixin():
         validators=[email_required,
                     email_validator,
                     unique_user_email])
+
+
+class UniqueUsernameFormMixin():
+    username = TextField(get_form_field_label('username'), 
+        validators=[username_required, unique_user_name])
 
 
 class PasswordFormMixin():
@@ -278,3 +289,8 @@ class ChangePasswordForm(Form, PasswordFormMixin):
             self.password.errors.append(get_message('INVALID_PASSWORD')[0])
             return False
         return True
+
+class UsernameSignupForm(Form, UniqueEmailFormMixin,  UniqueUsernameFormMixin):
+    
+    submit = SubmitField(get_form_field_label('create_account'))
+
